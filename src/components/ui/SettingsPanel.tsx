@@ -68,22 +68,29 @@ export const SettingsPanel = ({ config, onChange, onClose, aiEnabled, onAiToggle
     music: config.music || defaultMusic
   };
 
+  // 微信/鸿蒙/iOS/Android 浏览器兼容样式
   const panelStyle: React.CSSProperties = {
     position: 'absolute',
-    top: mobile ? '10px' : '60px',
-    left: mobile ? '10px' : '20px',
-    right: mobile ? '10px' : 'auto',
+    top: mobile ? 'max(10px, env(safe-area-inset-top, 10px))' : '60px',
+    left: mobile ? 'max(10px, env(safe-area-inset-left, 10px))' : '20px',
+    right: mobile ? 'max(10px, env(safe-area-inset-right, 10px))' : 'auto',
     zIndex: 20,
     background: 'rgba(0,0,0,0.95)',
     border: '1px solid rgba(255,215,0,0.3)',
     borderRadius: '8px',
     padding: mobile ? '12px' : '16px',
     width: mobile ? 'auto' : '280px',
+    maxWidth: mobile ? 'calc(100vw - 20px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px))' : '280px',
     maxHeight: mobile ? '70vh' : '80vh',
     overflowY: 'auto',
+    overflowX: 'hidden',
     fontFamily: 'sans-serif',
     color: '#fff',
-    backdropFilter: 'blur(8px)'
+    backdropFilter: 'blur(8px)',
+    boxSizing: 'border-box',
+    WebkitOverflowScrolling: 'touch', // iOS 滚动优化
+    wordBreak: 'break-word',
+    overflowWrap: 'break-word'
   };
 
   const sectionStyle: React.CSSProperties = {
@@ -101,9 +108,11 @@ export const SettingsPanel = ({ config, onChange, onClose, aiEnabled, onAiToggle
   };
 
   const sliderStyle: React.CSSProperties = {
-    width: '90%',
+    width: '100%',
+    maxWidth: '100%',
     accentColor: '#FFD700',
-    cursor: 'pointer'
+    cursor: 'pointer',
+    boxSizing: 'border-box'
   };
 
   const titleStyle: React.CSSProperties = {
@@ -114,14 +123,16 @@ export const SettingsPanel = ({ config, onChange, onClose, aiEnabled, onAiToggle
   };
 
   const inputStyle: React.CSSProperties = {
-    width: '90%',
+    width: '100%',
+    maxWidth: '100%',
     padding: '6px 8px',
     background: 'rgba(255,255,255,0.1)',
     border: '1px solid rgba(255,215,0,0.3)',
     borderRadius: '4px',
     color: '#fff',
     fontSize: '12px',
-    marginTop: '4px'
+    marginTop: '4px',
+    boxSizing: 'border-box'
   };
 
   return (
@@ -698,9 +709,9 @@ export const SettingsPanel = ({ config, onChange, onClose, aiEnabled, onAiToggle
           ))}
           
           {/* 文字粒子内容 - 多条轮播 */}
-          <div style={{ marginTop: '12px' }}>
-            <div style={{ ...labelStyle, marginBottom: '8px' }}>
-              <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Type size={12} /> 文字粒子内容</span>
+          <div style={{ marginTop: '12px', width: '100%', boxSizing: 'border-box' }}>
+            <div style={{ ...labelStyle, marginBottom: '8px', flexWrap: 'wrap', gap: '4px' }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}><Type size={12} /> 文字粒子内容</span>
               <button
                 onClick={() => {
                   const texts = config.gestureTexts || [config.gestureText || 'MERRY CHRISTMAS'];
@@ -716,7 +727,8 @@ export const SettingsPanel = ({ config, onChange, onClose, aiEnabled, onAiToggle
                   cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '2px'
+                  gap: '2px',
+                  flexShrink: 0
                 }}
               >
                 + 添加
@@ -724,8 +736,8 @@ export const SettingsPanel = ({ config, onChange, onClose, aiEnabled, onAiToggle
             </div>
             
             {(config.gestureTexts || [config.gestureText || 'MERRY CHRISTMAS']).map((text, idx) => (
-              <div key={idx} style={{ display: 'flex', gap: '4px', marginBottom: '6px', alignItems: 'center' }}>
-                <span style={{ color: '#888', fontSize: '10px', width: '16px' }}>{idx + 1}.</span>
+              <div key={idx} style={{ display: 'flex', gap: '4px', marginBottom: '6px', alignItems: 'center', width: '100%', boxSizing: 'border-box' }}>
+                <span style={{ color: '#888', fontSize: '10px', width: '16px', flexShrink: 0 }}>{idx + 1}.</span>
                 <input
                   type="text"
                   value={text}
@@ -734,16 +746,18 @@ export const SettingsPanel = ({ config, onChange, onClose, aiEnabled, onAiToggle
                     texts[idx] = e.target.value;
                     onChange({ ...config, gestureTexts: texts, gestureText: texts[0] });
                   }}
-                  placeholder="输入文字（支持大小写英文）"
+                  placeholder="输入文字"
                   maxLength={20}
                   style={{
                     flex: 1,
+                    minWidth: 0, // 关键：允许 flex 子元素收缩
                     padding: '6px 8px',
                     background: 'rgba(255,255,255,0.1)',
                     border: '1px solid rgba(255,215,0,0.3)',
                     borderRadius: '4px',
                     color: '#fff',
-                    fontSize: '11px'
+                    fontSize: '11px',
+                    boxSizing: 'border-box'
                   }}
                 />
                 {(config.gestureTexts?.length || 1) > 1 && (
@@ -759,7 +773,8 @@ export const SettingsPanel = ({ config, onChange, onClose, aiEnabled, onAiToggle
                       color: '#ff6666',
                       cursor: 'pointer',
                       padding: '4px',
-                      fontSize: '14px'
+                      fontSize: '14px',
+                      flexShrink: 0
                     }}
                   >
                     <X size={14} />

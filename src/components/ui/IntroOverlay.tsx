@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 interface IntroOverlayProps {
   text: string;
   subText?: string;
-  duration?: number; // 显示时长（毫秒）
+  duration?: number;
   onComplete?: () => void;
   enabled?: boolean;
 }
@@ -27,13 +27,8 @@ export const IntroOverlay = ({
     setVisible(true);
     setPhase('enter');
 
-    // 进入动画完成后进入显示阶段
     const enterTimer = setTimeout(() => setPhase('show'), 800);
-    
-    // 显示一段时间后开始退出
     const showTimer = setTimeout(() => setPhase('exit'), duration - 800);
-    
-    // 退出动画完成后隐藏
     const exitTimer = setTimeout(() => {
       setVisible(false);
       onComplete?.();
@@ -56,6 +51,12 @@ export const IntroOverlay = ({
         left: 0,
         right: 0,
         bottom: 0,
+        // 多种高度兼容方案：微信/鸿蒙/iOS/Android
+        width: '100%',
+        height: '100%',
+        minHeight: '100vh',
+        // @ts-expect-error webkit 私有属性
+        minHeight: '-webkit-fill-available',
         zIndex: 9999,
         display: 'flex',
         flexDirection: 'column',
@@ -64,6 +65,13 @@ export const IntroOverlay = ({
         background: phase === 'exit' ? 'transparent' : 'rgba(0, 0, 0, 0.95)',
         transition: 'background 0.8s ease-out',
         pointerEvents: phase === 'exit' ? 'none' : 'auto',
+        overflow: 'hidden',
+        boxSizing: 'border-box',
+        // 安全区域内边距
+        paddingTop: 'env(safe-area-inset-top, 0)',
+        paddingBottom: 'env(safe-area-inset-bottom, 0)',
+        paddingLeft: 'env(safe-area-inset-left, 0)',
+        paddingRight: 'env(safe-area-inset-right, 0)',
       }}
       onClick={() => {
         setPhase('exit');
@@ -73,61 +81,92 @@ export const IntroOverlay = ({
         }, 800);
       }}
     >
-      {/* 主文案 */}
-      <h1
+      {/* 内容容器 - 限制宽度防止溢出 */}
+      <div
         style={{
-          fontSize: 'clamp(24px, 8vw, 64px)',
-          fontWeight: 'bold',
-          color: '#FFD700',
-          textAlign: 'center',
-          margin: 0,
-          padding: '0 20px',
-          textShadow: '0 0 20px rgba(255, 215, 0, 0.5), 0 0 40px rgba(255, 215, 0, 0.3)',
-          opacity: phase === 'enter' ? 0 : phase === 'exit' ? 0 : 1,
-          transform: phase === 'enter' ? 'translateY(30px)' : phase === 'exit' ? 'translateY(-30px) scale(1.1)' : 'translateY(0)',
-          transition: 'all 0.8s cubic-bezier(0.4, 0, 0.2, 1)',
-          animation: phase === 'show' ? 'textGlow 2s ease-in-out infinite' : 'none',
+          width: '100%',
+          maxWidth: 'calc(100vw - 48px)', // 左右各留 24px
+          padding: '0 24px',
+          boxSizing: 'border-box',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          overflow: 'hidden',
         }}
       >
-        {text}
-      </h1>
-
-      {/* 副文案 */}
-      {subText && (
-        <p
+        {/* 主文案 */}
+        <h1
           style={{
-            fontSize: 'clamp(14px, 4vw, 24px)',
-            color: 'rgba(255, 255, 255, 0.8)',
+            // 响应式字体：移动端更小
+            fontSize: 'clamp(18px, 5vw, 48px)',
+            fontWeight: 'bold',
+            color: '#FFD700',
             textAlign: 'center',
-            margin: '20px 0 0 0',
-            padding: '0 20px',
+            margin: 0,
+            padding: 0,
+            lineHeight: 1.4,
+            // 强制换行防止溢出
+            wordBreak: 'break-word',
+            overflowWrap: 'anywhere',
+            hyphens: 'auto',
+            maxWidth: '100%',
+            width: '100%',
+            textShadow: '0 0 20px rgba(255, 215, 0, 0.5), 0 0 40px rgba(255, 215, 0, 0.3)',
             opacity: phase === 'enter' ? 0 : phase === 'exit' ? 0 : 1,
-            transform: phase === 'enter' ? 'translateY(20px)' : 'translateY(0)',
-            transition: 'all 0.8s cubic-bezier(0.4, 0, 0.2, 1) 0.2s',
+            transform: phase === 'enter' ? 'translateY(30px)' : phase === 'exit' ? 'translateY(-30px) scale(1.1)' : 'translateY(0)',
+            transition: 'all 0.8s cubic-bezier(0.4, 0, 0.2, 1)',
+            animation: phase === 'show' ? 'introTextGlow 2s ease-in-out infinite' : 'none',
           }}
         >
-          {subText}
-        </p>
-      )}
+          {text}
+        </h1>
+
+        {/* 副文案 */}
+        {subText && (
+          <p
+            style={{
+              fontSize: 'clamp(12px, 3vw, 18px)',
+              color: 'rgba(255, 255, 255, 0.8)',
+              textAlign: 'center',
+              margin: '16px 0 0 0',
+              padding: 0,
+              lineHeight: 1.5,
+              wordBreak: 'break-word',
+              overflowWrap: 'anywhere',
+              hyphens: 'auto',
+              maxWidth: '100%',
+              width: '100%',
+              opacity: phase === 'enter' ? 0 : phase === 'exit' ? 0 : 1,
+              transform: phase === 'enter' ? 'translateY(20px)' : 'translateY(0)',
+              transition: 'all 0.8s cubic-bezier(0.4, 0, 0.2, 1) 0.2s',
+            }}
+          >
+            {subText}
+          </p>
+        )}
+      </div>
 
       {/* 点击提示 */}
       <p
         style={{
           position: 'absolute',
-          bottom: '40px',
-          fontSize: '14px',
+          bottom: 'calc(24px + env(safe-area-inset-bottom, 0px))',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          fontSize: '12px',
           color: 'rgba(255, 255, 255, 0.4)',
           opacity: phase === 'show' ? 1 : 0,
           transition: 'opacity 0.5s',
-          animation: phase === 'show' ? 'pulse 2s ease-in-out infinite' : 'none',
+          animation: phase === 'show' ? 'introPulse 2s ease-in-out infinite' : 'none',
+          whiteSpace: 'nowrap',
+          padding: '0 16px',
         }}
       >
         点击任意位置继续
       </p>
 
-      {/* CSS 动画 */}
       <style>{`
-        @keyframes textGlow {
+        @keyframes introTextGlow {
           0%, 100% {
             text-shadow: 0 0 20px rgba(255, 215, 0, 0.5), 0 0 40px rgba(255, 215, 0, 0.3);
           }
@@ -135,7 +174,7 @@ export const IntroOverlay = ({
             text-shadow: 0 0 30px rgba(255, 215, 0, 0.8), 0 0 60px rgba(255, 215, 0, 0.5), 0 0 80px rgba(255, 215, 0, 0.3);
           }
         }
-        @keyframes pulse {
+        @keyframes introPulse {
           0%, 100% { opacity: 0.4; }
           50% { opacity: 0.8; }
         }
