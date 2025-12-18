@@ -54,9 +54,7 @@ export const IntroOverlay = ({
         // 多种高度兼容方案：微信/鸿蒙/iOS/Android
         width: '100%',
         height: '100%',
-        minHeight: '100vh',
-        // @ts-expect-error webkit 私有属性
-        minHeight: '-webkit-fill-available',
+        minHeight: 'calc(100vh)',
         zIndex: 9999,
         display: 'flex',
         flexDirection: 'column',

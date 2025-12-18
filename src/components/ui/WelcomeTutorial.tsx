@@ -1,8 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { 
   X, ChevronRight, ChevronLeft, 
-  Camera, Settings, Link, TreePine, Sparkles, Hand, 
-  Volume2, Upload, Star, Type, Gift, Music
+  Camera, Settings, Link, TreePine, Sparkles, Hand
 } from 'lucide-react';
 import { isMobile } from '../../utils/helpers';
 
