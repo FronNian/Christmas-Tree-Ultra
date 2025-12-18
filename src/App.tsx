@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Canvas } from '@react-three/fiber';
 import * as THREE from 'three';
-import { Experience, GestureController, SettingsPanel, TitleOverlay, Modal, LyricsDisplay, AvatarCropper, IntroOverlay, WelcomeTutorial, photoScreenPositions } from './components';
+import { Experience, GestureController, SettingsPanel, TitleOverlay, Modal, LyricsDisplay, AvatarCropper, IntroOverlay, WelcomeTutorial, PrivacyNotice, photoScreenPositions } from './components';
 import { CHRISTMAS_MUSIC_URL } from './config';
 import { isMobile, fileToBase64 } from './utils/helpers';
 import { 
@@ -11,7 +11,7 @@ import {
 } from './lib/r2';
 import type { SceneState, SceneConfig, GestureConfig, GestureAction, MusicConfig } from './types';
 import { PRESET_MUSIC } from './types';
-import { Volume2, VolumeX, Camera, Settings, Wrench, Link, TreePine, Sparkles, Loader, HelpCircle } from 'lucide-react';
+import { Volume2, VolumeX, Camera, Settings, Wrench, Link, TreePine, Sparkles, Loader, HelpCircle, Shield } from 'lucide-react';
 
 // 深度合并配置对象
 function deepMergeConfig<T extends Record<string, unknown>>(target: T, source: Partial<T>): T {
@@ -73,6 +73,9 @@ export default function GrandTreeApp() {
       return true;
     }
   });
+
+  // 隐私政策弹窗
+  const [showPrivacy, setShowPrivacy] = useState(false);
 
   // Refs
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -705,6 +708,9 @@ export default function GrandTreeApp() {
             <button onClick={() => setShowTutorial(true)} style={buttonStyle(false, mobile)} title="使用帮助">
               <HelpCircle size={18} />
             </button>
+            <button onClick={() => setShowPrivacy(true)} style={buttonStyle(false, mobile)} title="隐私政策">
+              <Shield size={18} />
+            </button>
           </>
         )}
 
@@ -765,6 +771,11 @@ export default function GrandTreeApp() {
       {/* 首次访问教程 */}
       {showTutorial && (
         <WelcomeTutorial onClose={() => setShowTutorial(false)} />
+      )}
+
+      {/* 隐私政策 */}
+      {showPrivacy && (
+        <PrivacyNotice onClose={() => setShowPrivacy(false)} />
       )}
     </div>
   );
