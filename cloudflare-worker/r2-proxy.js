@@ -5,8 +5,8 @@
  * 1. Cloudflare Dashboard → Workers & Pages → Create Worker
  * 2. 复制此代码到 Worker 编辑器
  * 3. Settings → Variables → 添加 R2 Bucket 绑定，变量名: R2_BUCKET
- * 4. 绑定自定义域名: r2-api.lynflows.com
- * 5. 删除 DNS 中 r2-api 的 A 记录
+ * 4. 绑定自定义域名: r2-api.your-domain.com
+ * 5. 删除 DNS 中 r2-api 的 A 记录（如有）
  */
 
 // 请求频率限制（使用 KV 存储，需要绑定 KV namespace: RATE_LIMIT）

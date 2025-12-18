@@ -4,11 +4,11 @@
  */
 
 // R2 Worker API 地址（需要部署 Worker 后填写）
-// 部署后改成你的 Worker 域名，如 'https://r2-api.lynflows.com'
-const R2_API_URL = import.meta.env.VITE_R2_API_URL || 'https://christmas.lynflows.com';
+// 部署后改成你的 Worker 域名，如 'https://r2-api.your-domain.com'
+const R2_API_URL = import.meta.env.VITE_R2_API_URL || '';
 
 // R2 公开访问域名（用于读取）
-const R2_PUBLIC_URL = import.meta.env.VITE_R2_PUBLIC_URL || 'https://christmas.lynflows.com';
+const R2_PUBLIC_URL = import.meta.env.VITE_R2_PUBLIC_URL || '';
 
 // 本地存储 key
 const LOCAL_SHARE_KEY = 'christmas_tree_share';

@@ -6,6 +6,7 @@ compatibility_date = "2024-01-01"
 binding = "R2_BUCKET"
 bucket_name = "merrychristmas"
 
-routes = [
-  { pattern = "r2-api.lynflows.com/*", zone_name = "lynflows.com" }
-]
+# 配置你的自定义域名路由
+# routes = [
+#   { pattern = "r2-api.your-domain.com/*", zone_name = "your-domain.com" }
+# ]
