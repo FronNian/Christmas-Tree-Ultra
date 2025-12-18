@@ -5,3 +5,5 @@ export { GestureTutorial } from './GestureTutorial';
 export { Modal } from './Modal';
 export type { ModalProps, ModalButton, ModalType } from './Modal';
 export { LyricsDisplay } from './LyricsDisplay';
+export { AvatarCropper } from './AvatarCropper';
+export { IntroOverlay } from './IntroOverlay';

@@ -70,6 +70,13 @@ export interface SceneConfig {
   giftPile: { enabled: boolean; count: number };
   ribbons: { enabled: boolean; count: number };
   fog: { enabled: boolean; opacity: number };
+  topStar?: { avatarUrl?: string };  // 树顶星星头像
+  intro?: {                // 开场文案配置
+    enabled: boolean;
+    text: string;          // 主文案
+    subText?: string;      // 副文案
+    duration: number;      // 显示时长（毫秒）
+  };
   music?: MusicConfig;     // 音乐配置
   gestures?: GestureConfig;
   gestureText?: string; // 剪刀手显示的文字（兼容旧版）

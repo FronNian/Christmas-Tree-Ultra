@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Canvas } from '@react-three/fiber';
 import * as THREE from 'three';
-import { Experience, GestureController, SettingsPanel, TitleOverlay, Modal, LyricsDisplay, photoScreenPositions } from './components';
+import { Experience, GestureController, SettingsPanel, TitleOverlay, Modal, LyricsDisplay, AvatarCropper, IntroOverlay, photoScreenPositions } from './components';
 import { CHRISTMAS_MUSIC_URL } from './config';
 import { isMobile, fileToBase64 } from './utils/helpers';
 import { 
@@ -58,6 +58,12 @@ export default function GrandTreeApp() {
   const [showText, setShowText] = useState(false);
   const [currentTextIndex, setCurrentTextIndex] = useState(0);
   const [currentGesture, setCurrentGesture] = useState<string>('');
+
+  // 头像裁剪状态
+  const [avatarToCrop, setAvatarToCrop] = useState<string | null>(null);
+
+  // 开场文案状态
+  const [introShown, setIntroShown] = useState(false);
 
   // Refs
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -573,6 +579,16 @@ export default function GrandTreeApp() {
 
   return (
     <div style={{ width: '100vw', height: '100dvh', backgroundColor: '#000', position: 'fixed', top: 0, left: 0, overflow: 'hidden', touchAction: 'none' }}>
+      {/* 开场文案 */}
+      {sceneConfig.intro?.enabled && !introShown && (
+        <IntroOverlay
+          text={sceneConfig.intro.text}
+          subText={sceneConfig.intro.subText}
+          duration={sceneConfig.intro.duration}
+          onComplete={() => setIntroShown(true)}
+        />
+      )}
+
       {/* 3D Canvas */}
       <div style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0, zIndex: 1 }}>
         <Canvas
@@ -622,6 +638,19 @@ export default function GrandTreeApp() {
           onClose={() => setShowSettings(false)}
           aiEnabled={aiEnabled}
           onAiToggle={setAiEnabled}
+          onAvatarUpload={(imageUrl) => setAvatarToCrop(imageUrl)}
+        />
+      )}
+
+      {/* 头像裁剪器 */}
+      {avatarToCrop && (
+        <AvatarCropper
+          imageUrl={avatarToCrop}
+          onConfirm={(croppedImage) => {
+            setSceneConfig(prev => ({ ...prev, topStar: { avatarUrl: croppedImage } }));
+            setAvatarToCrop(null);
+          }}
+          onCancel={() => setAvatarToCrop(null)}
         />
       )}
 

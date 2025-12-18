@@ -37,9 +37,10 @@ interface SettingsPanelProps {
   onClose: () => void;
   aiEnabled: boolean;
   onAiToggle: (enabled: boolean) => void;
+  onAvatarUpload?: (imageUrl: string) => void;  // 头像上传回调
 }
 
-export const SettingsPanel = ({ config, onChange, onClose, aiEnabled, onAiToggle }: SettingsPanelProps) => {
+export const SettingsPanel = ({ config, onChange, onClose, aiEnabled, onAiToggle, onAvatarUpload }: SettingsPanelProps) => {
   const mobile = isMobile();
 
   const defaultGestures: GestureConfig = {
@@ -187,6 +188,51 @@ export const SettingsPanel = ({ config, onChange, onClose, aiEnabled, onAiToggle
         
         <div style={{ ...labelStyle, marginTop: '10px' }}><span>字体大小: {safeConfig.title.size || 48}px</span></div>
         <input type="range" min="24" max="200" step="4" value={safeConfig.title.size || 48} onChange={e => onChange({ ...config, title: { ...safeConfig.title, size: Number(e.target.value) } })} style={sliderStyle} />
+      </div>
+
+      {/* 开场文案 */}
+      <div style={sectionStyle}>
+        <div style={{ ...titleStyle, display: 'flex', alignItems: 'center', gap: '6px' }}><Type size={14} /> 开场文案</div>
+        <p style={{ fontSize: '10px', color: '#888', margin: '0 0 8px 0' }}>
+          分享链接打开时显示的开场白
+        </p>
+        <div style={labelStyle}>
+          <span>启用开场</span>
+          <input 
+            type="checkbox" 
+            checked={config.intro?.enabled ?? false} 
+            onChange={e => onChange({ ...config, intro: { ...config.intro, enabled: e.target.checked, text: config.intro?.text || '献给最特别的你', duration: config.intro?.duration || 4000 } })} 
+            style={{ accentColor: '#FFD700' }} 
+          />
+        </div>
+        {config.intro?.enabled && (
+          <>
+            <input
+              type="text"
+              value={config.intro?.text || ''}
+              onChange={e => onChange({ ...config, intro: { ...config.intro!, text: e.target.value } })}
+              placeholder="主文案（如：献给最特别的你）"
+              style={inputStyle}
+            />
+            <input
+              type="text"
+              value={config.intro?.subText || ''}
+              onChange={e => onChange({ ...config, intro: { ...config.intro!, subText: e.target.value } })}
+              placeholder="副文案（可选，如：From 某某）"
+              style={{ ...inputStyle, marginTop: '6px' }}
+            />
+            <div style={{ ...labelStyle, marginTop: '10px' }}><span>显示时长: {(config.intro?.duration || 4000) / 1000}秒</span></div>
+            <input 
+              type="range" 
+              min="2000" 
+              max="10000" 
+              step="500" 
+              value={config.intro?.duration || 4000} 
+              onChange={e => onChange({ ...config, intro: { ...config.intro!, duration: Number(e.target.value) } })} 
+              style={sliderStyle} 
+            />
+          </>
+        )}
       </div>
 
       {/* 树叶 */}
@@ -427,6 +473,66 @@ export const SettingsPanel = ({ config, onChange, onClose, aiEnabled, onAiToggle
           <span>显示星空</span>
           <input type="checkbox" checked={config.stars.enabled} onChange={e => onChange({ ...config, stars: { enabled: e.target.checked } })} style={{ accentColor: '#FFD700' }} />
         </div>
+      </div>
+
+      {/* 树顶星星/头像 */}
+      <div style={sectionStyle}>
+        <div style={{ ...titleStyle, display: 'flex', alignItems: 'center', gap: '6px' }}><Star size={14} /> 树顶星星</div>
+        <p style={{ fontSize: '10px', color: '#888', margin: '0 0 8px 0' }}>
+          上传头像替换树顶星星（五角星形状裁剪）
+        </p>
+        <div style={{ ...labelStyle, marginBottom: '4px' }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Upload size={12} /> 上传头像</span>
+          {config.topStar?.avatarUrl && (
+            <button
+              onClick={() => onChange({ ...config, topStar: { avatarUrl: undefined } })}
+              style={{ background: 'none', border: 'none', color: '#ff6666', cursor: 'pointer', fontSize: '10px' }}
+            >
+              恢复星星
+            </button>
+          )}
+        </div>
+        <input
+          type="file"
+          accept="image/*"
+          onChange={async (e) => {
+            const file = e.target.files?.[0];
+            if (file) {
+              if (file.size > 5 * 1024 * 1024) {
+                alert('图片不能超过 5MB');
+                e.target.value = '';
+                return;
+              }
+              const reader = new FileReader();
+              reader.onload = () => {
+                // 触发裁剪器
+                if (typeof onAvatarUpload === 'function') {
+                  onAvatarUpload(reader.result as string);
+                }
+              };
+              reader.readAsDataURL(file);
+            }
+            e.target.value = '';
+          }}
+          style={{ width: '90%', fontSize: '10px' }}
+        />
+        {config.topStar?.avatarUrl && (
+          <div style={{ marginTop: '8px', textAlign: 'center' }}>
+            <img 
+              src={config.topStar.avatarUrl} 
+              alt="avatar" 
+              style={{ 
+                width: '60px', 
+                height: '60px', 
+                borderRadius: '4px',
+                border: '2px solid #FFD700'
+              }} 
+            />
+            <p style={{ fontSize: '10px', color: '#4CAF50', margin: '4px 0 0 0' }}>
+              ✓ 已设置头像
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Bloom 效果 */}

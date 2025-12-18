@@ -53,6 +53,9 @@ export const Experience = ({
   const isPhotoSelected = selectedPhotoIndex !== null;
   const mobile = isMobile();
 
+  // Debug: 检查 topStar 配置
+  console.log('[Experience] config.topStar:', config.topStar);
+
   // 确保 config 有新字段的默认值
   const safeConfig = {
     ...config,
@@ -132,7 +135,7 @@ export const Experience = ({
             {safeConfig.lights.enabled && <FairyLights state={sceneState} />}
             {safeConfig.giftPile.enabled && <GiftPile state={sceneState} count={safeConfig.giftPile.count} />}
             <SpiralRibbon state={sceneState} color="#FF2222" glowColor="#FF4444" />
-            <TopStar state={sceneState} />
+            <TopStar state={sceneState} avatarUrl={config.topStar?.avatarUrl} />
           </Suspense>
           {safeConfig.sparkles.enabled && (
             <Sparkles count={safeConfig.sparkles.count} scale={50} size={8} speed={0.4} opacity={0.4} color={CONFIG.colors.silver} />
