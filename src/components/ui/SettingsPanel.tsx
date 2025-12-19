@@ -1358,32 +1358,24 @@ export const SettingsPanel = ({
         </p>
       </CollapsibleSection>
 
-      {/* 特效颜色 */}
-      <CollapsibleSection title="特效颜色" icon={<Heart size={14} />}>
+      {/* 爱心特效 */}
+      <CollapsibleSection title="爱心特效" icon={<Heart size={14} />}>
         <p style={{ fontSize: '10px', color: '#888', margin: '0 0 8px 0' }}>
-          手势触发的爱心和文字粒子颜色
+          手势或故事线触发的爱心效果
         </p>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-          <div>
-            <span style={{ fontSize: '10px', color: '#888' }}>爱心颜色</span>
-            <input
-              type="color"
-              value={config.heartEffect?.color || '#FF1493'}
-              onChange={e => onChange({ ...config, heartEffect: { ...config.heartEffect, color: e.target.value } })}
-              style={{ width: '100%', height: '28px', cursor: 'pointer', border: 'none', borderRadius: '4px' }}
-            />
-          </div>
-          <div>
-            <span style={{ fontSize: '10px', color: '#888' }}>文字颜色</span>
-            <input
-              type="color"
-              value={config.textEffect?.color || '#FFD700'}
-              onChange={e => onChange({ ...config, textEffect: { ...config.textEffect, color: e.target.value } })}
-              style={{ width: '100%', height: '28px', cursor: 'pointer', border: 'none', borderRadius: '4px' }}
-            />
-          </div>
+        
+        {/* 爱心颜色 */}
+        <div>
+          <span style={{ fontSize: '10px', color: '#888' }}>爱心颜色</span>
+          <input
+            type="color"
+            value={config.heartEffect?.color || '#FF1493'}
+            onChange={e => onChange({ ...config, heartEffect: { ...config.heartEffect, color: e.target.value } })}
+            style={{ width: '100%', height: '28px', cursor: 'pointer', border: 'none', borderRadius: '4px' }}
+          />
         </div>
-        {/* 粒子大小 */}
+        
+        {/* 爱心大小 */}
         <div style={{ ...labelStyle, marginTop: '10px' }}>
           <span>爱心大小: {(config.heartEffect?.size || 1).toFixed(1)}x</span>
         </div>
@@ -1396,7 +1388,185 @@ export const SettingsPanel = ({
           onChange={e => onChange({ ...config, heartEffect: { ...config.heartEffect, color: config.heartEffect?.color || '#FF1493', size: Number(e.target.value) } })}
           style={sliderStyle}
         />
-        <div style={{ ...labelStyle, marginTop: '8px' }}>
+        
+        {/* 爱心粒子数量 */}
+        <div style={{ ...labelStyle, marginTop: '10px' }}>
+          <span>粒子数量: {config.gestureEffect?.heartCount || 1500}</span>
+        </div>
+        <input
+          type="range"
+          min="500"
+          max="3000"
+          step="100"
+          value={config.gestureEffect?.heartCount || 1500}
+          onChange={e => onChange({
+            ...config,
+            gestureEffect: {
+              ...config.gestureEffect,
+              duration: config.gestureEffect?.duration || 3000,
+              hideTree: config.gestureEffect?.hideTree ?? true,
+              textCount: config.gestureEffect?.textCount || 1000,
+              heartCount: Number(e.target.value)
+            }
+          })}
+          style={sliderStyle}
+        />
+        
+        {/* 照片切换间隔 */}
+        <div style={{ ...labelStyle, marginTop: '10px' }}>
+          <span>照片间隔: {((config.heartEffect?.photoInterval || 3000) / 1000).toFixed(1)}秒</span>
+        </div>
+        <input
+          type="range"
+          min="1000"
+          max="10000"
+          step="500"
+          value={config.heartEffect?.photoInterval || 3000}
+          onChange={e => onChange({ ...config, heartEffect: { ...config.heartEffect, color: config.heartEffect?.color || '#FF1493', photoInterval: Number(e.target.value) } })}
+          style={sliderStyle}
+        />
+        <p style={{ fontSize: '9px', color: '#666', margin: '2px 0 0 0' }}>
+          爱心中照片轮播的切换间隔
+        </p>
+        
+        {/* 爱心流光效果 */}
+        <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+          <div style={labelStyle}>
+            <span>💫 边框流光</span>
+            <input 
+              type="checkbox" 
+              checked={config.heartEffect?.glowTrail?.enabled ?? true} 
+              onChange={e => onChange({ 
+                ...config, 
+                heartEffect: { 
+                  ...config.heartEffect, 
+                  color: config.heartEffect?.color || '#FF1493',
+                  glowTrail: { 
+                    ...config.heartEffect?.glowTrail, 
+                    enabled: e.target.checked 
+                  } 
+                } 
+              })} 
+              style={{ accentColor: '#FFD700' }} 
+            />
+          </div>
+          {(config.heartEffect?.glowTrail?.enabled ?? true) && (
+            <>
+              <div style={{ marginTop: '8px' }}>
+                <span style={{ fontSize: '10px', color: '#888' }}>流光颜色</span>
+                <input
+                  type="color"
+                  value={config.heartEffect?.glowTrail?.color || config.heartEffect?.color || '#FF1493'}
+                  onChange={e => onChange({ 
+                    ...config, 
+                    heartEffect: { 
+                      ...config.heartEffect, 
+                      color: config.heartEffect?.color || '#FF1493',
+                      glowTrail: { 
+                        ...config.heartEffect?.glowTrail, 
+                        enabled: config.heartEffect?.glowTrail?.enabled ?? true,
+                        color: e.target.value 
+                      } 
+                    } 
+                  })}
+                  style={{ width: '100%', height: '28px', cursor: 'pointer', border: 'none', borderRadius: '4px' }}
+                />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '8px' }}>
+                <div>
+                  <span style={{ fontSize: '10px', color: '#888' }}>速度: {config.heartEffect?.glowTrail?.speed || 3}</span>
+                  <input
+                    type="range"
+                    min="1"
+                    max="10"
+                    step="1"
+                    value={config.heartEffect?.glowTrail?.speed || 3}
+                    onChange={e => onChange({ 
+                      ...config, 
+                      heartEffect: { 
+                        ...config.heartEffect, 
+                        color: config.heartEffect?.color || '#FF1493',
+                        glowTrail: { 
+                          ...config.heartEffect?.glowTrail, 
+                          enabled: config.heartEffect?.glowTrail?.enabled ?? true,
+                          speed: Number(e.target.value) 
+                        } 
+                      } 
+                    })}
+                    style={sliderStyle}
+                  />
+                </div>
+                <div>
+                  <span style={{ fontSize: '10px', color: '#888' }}>数量: {config.heartEffect?.glowTrail?.count || 2}</span>
+                  <input
+                    type="range"
+                    min="1"
+                    max="5"
+                    step="1"
+                    value={config.heartEffect?.glowTrail?.count || 2}
+                    onChange={e => onChange({ 
+                      ...config, 
+                      heartEffect: { 
+                        ...config.heartEffect, 
+                        color: config.heartEffect?.color || '#FF1493',
+                        glowTrail: { 
+                          ...config.heartEffect?.glowTrail, 
+                          enabled: config.heartEffect?.glowTrail?.enabled ?? true,
+                          count: Number(e.target.value) 
+                        } 
+                      } 
+                    })}
+                    style={sliderStyle}
+                  />
+                </div>
+              </div>
+              <div style={{ ...labelStyle, marginTop: '8px' }}>
+                <span>流光大小: {(config.heartEffect?.glowTrail?.size || 1.5).toFixed(1)}</span>
+              </div>
+              <input
+                type="range"
+                min="0.5"
+                max="3"
+                step="0.1"
+                value={config.heartEffect?.glowTrail?.size || 1.5}
+                onChange={e => onChange({ 
+                  ...config, 
+                  heartEffect: { 
+                    ...config.heartEffect, 
+                    color: config.heartEffect?.color || '#FF1493',
+                    glowTrail: { 
+                      ...config.heartEffect?.glowTrail, 
+                      enabled: config.heartEffect?.glowTrail?.enabled ?? true,
+                      size: Number(e.target.value) 
+                    } 
+                  } 
+                })}
+                style={sliderStyle}
+              />
+            </>
+          )}
+        </div>
+      </CollapsibleSection>
+      
+      {/* 文字特效 */}
+      <CollapsibleSection title="文字特效" icon={<Type size={14} />}>
+        <p style={{ fontSize: '10px', color: '#888', margin: '0 0 8px 0' }}>
+          手势或故事线触发的文字效果
+        </p>
+        
+        {/* 文字颜色 */}
+        <div>
+          <span style={{ fontSize: '10px', color: '#888' }}>文字颜色</span>
+          <input
+            type="color"
+            value={config.textEffect?.color || '#FFD700'}
+            onChange={e => onChange({ ...config, textEffect: { ...config.textEffect, color: e.target.value } })}
+            style={{ width: '100%', height: '28px', cursor: 'pointer', border: 'none', borderRadius: '4px' }}
+          />
+        </div>
+        
+        {/* 文字大小 */}
+        <div style={{ ...labelStyle, marginTop: '10px' }}>
           <span>文字大小: {(config.textEffect?.size || 1).toFixed(1)}x</span>
         </div>
         <input
@@ -1406,6 +1576,29 @@ export const SettingsPanel = ({
           step="0.1"
           value={config.textEffect?.size || 1}
           onChange={e => onChange({ ...config, textEffect: { ...config.textEffect, color: config.textEffect?.color || '#FFD700', size: Number(e.target.value) } })}
+          style={sliderStyle}
+        />
+        
+        {/* 文字粒子数量 */}
+        <div style={{ ...labelStyle, marginTop: '10px' }}>
+          <span>粒子数量: {config.gestureEffect?.textCount || 1000}</span>
+        </div>
+        <input
+          type="range"
+          min="500"
+          max="2000"
+          step="100"
+          value={config.gestureEffect?.textCount || 1000}
+          onChange={e => onChange({
+            ...config,
+            gestureEffect: {
+              ...config.gestureEffect,
+              duration: config.gestureEffect?.duration || 3000,
+              hideTree: config.gestureEffect?.hideTree ?? true,
+              textCount: Number(e.target.value),
+              heartCount: config.gestureEffect?.heartCount || 1500
+            }
+          })}
           style={sliderStyle}
         />
       </CollapsibleSection>
@@ -1714,49 +1907,9 @@ export const SettingsPanel = ({
               style={sliderStyle}
             />
 
-            <div style={{ ...labelStyle, marginTop: '8px' }}>
-              <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Heart size={12} /> 爱心粒子数量: {config.gestureEffect?.heartCount || 1500}</span>
-            </div>
-            <input
-              type="range"
-              min="500"
-              max="3000"
-              step="100"
-              value={config.gestureEffect?.heartCount || 1500}
-              onChange={e => onChange({
-                ...config,
-                gestureEffect: {
-                  ...config.gestureEffect,
-                  duration: config.gestureEffect?.duration || 3000,
-                  hideTree: config.gestureEffect?.hideTree ?? true,
-                  textCount: config.gestureEffect?.textCount || 1000,
-                  heartCount: Number(e.target.value)
-                }
-              })}
-              style={sliderStyle}
-            />
-
-            <div style={{ ...labelStyle, marginTop: '8px' }}>
-              <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Type size={12} /> 文字粒子数量: {config.gestureEffect?.textCount || 1000}</span>
-            </div>
-            <input
-              type="range"
-              min="500"
-              max="2000"
-              step="100"
-              value={config.gestureEffect?.textCount || 1000}
-              onChange={e => onChange({
-                ...config,
-                gestureEffect: {
-                  ...config.gestureEffect,
-                  duration: config.gestureEffect?.duration || 3000,
-                  hideTree: config.gestureEffect?.hideTree ?? true,
-                  textCount: Number(e.target.value),
-                  heartCount: config.gestureEffect?.heartCount || 1500
-                }
-              })}
-              style={sliderStyle}
-            />
+            <p style={{ fontSize: '9px', color: '#666', margin: '8px 0 0 0' }}>
+              粒子数量和颜色请在"爱心特效"和"文字特效"中配置
+            </p>
           </div>
         </CollapsibleSection>
       )}

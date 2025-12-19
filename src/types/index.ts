@@ -145,7 +145,18 @@ export interface SceneConfig {
   ribbons: { enabled: boolean; count: number; colors?: string[] };
   fog: { enabled: boolean; opacity: number; color?: string };
   background?: { color: string };
-  heartEffect?: { color: string; size?: number; photoInterval?: number };
+  heartEffect?: { 
+    color: string; 
+    size?: number; 
+    photoInterval?: number;
+    glowTrail?: {
+      enabled?: boolean;      // 是否启用流光效果
+      color?: string;         // 流光颜色
+      speed?: number;         // 流动速度 (1-10)
+      count?: number;         // 流光数量
+      size?: number;          // 流光大小
+    };
+  };
   textEffect?: { color: string; size?: number };
   treeShape?: { height: number; radius: number };
   spiralRibbon?: SpiralRibbonConfig;  // 螺旋带子配置

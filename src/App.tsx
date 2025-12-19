@@ -217,12 +217,11 @@ export default function GrandTreeApp() {
         setShowText(false);
         if (effectConfig.hideTree) setHideTree(true);
         
-        // 计算爱心特效持续时间：至少显示完所有照片一轮
+        // 计算爱心特效持续时间
         const photoInterval = (sceneConfig.heartEffect as { photoInterval?: number } | undefined)?.photoInterval || 3000;
         const photoCount = uploadedPhotos.length || 1;
-        // 粒子聚合时间(约2秒) + 每张照片显示时间 + 滑动动画时间(600ms) + 缓冲
-        const minDurationForPhotos = 2000 + photoCount * photoInterval + (photoCount - 1) * 600 + 1000;
-        const heartDuration = Math.max(effectConfig.duration, minDurationForPhotos);
+        // 粒子聚合时间(约2秒) + 前N-1张照片时间 + 滑动动画时间 + 最后一张照片显示配置的duration
+        const heartDuration = 2000 + (photoCount - 1) * photoInterval + (photoCount - 1) * 600 + effectConfig.duration + 1000;
         
         heartTimeoutRef.current = setTimeout(() => {
           setShowHeart(false);

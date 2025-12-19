@@ -222,6 +222,13 @@ export const Experience = ({
         centerPhoto={heartCenterPhoto}
         centerPhotos={heartCenterPhotos}
         photoInterval={heartPhotoInterval}
+        glowTrail={{
+          enabled: config.heartEffect?.glowTrail?.enabled ?? true,
+          color: config.heartEffect?.glowTrail?.color || config.heartEffect?.color || '#FF1493',
+          speed: config.heartEffect?.glowTrail?.speed || 3,
+          count: config.heartEffect?.glowTrail?.count || 2,
+          size: config.heartEffect?.glowTrail?.size || 1.5
+        }}
       />
       <TextParticles 
         text={customMessage || 'MERRY CHRISTMAS'} 

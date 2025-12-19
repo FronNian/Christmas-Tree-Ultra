@@ -1,14 +1,27 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Canvas } from '@react-three/fiber';
 import * as THREE from 'three';
-import { Experience, GestureController, TitleOverlay, WelcomeTutorial, IntroOverlay } from '../components';
+import { Experience, GestureController, TitleOverlay, WelcomeTutorial, IntroOverlay, CenterPhoto, CSSTextEffect } from '../components';
 import { CHRISTMAS_MUSIC_URL } from '../config';
 import { isMobile } from '../utils/helpers';
 import { sanitizeShareConfig, sanitizePhotos, sanitizeText } from '../utils/sanitize';
 import { getShare } from '../lib/r2';
 import type { ShareData } from '../lib/r2';
 import type { SceneState, SceneConfig } from '../types';
-import { Volume2, VolumeX, TreePine, Sparkles, Loader, Frown, HelpCircle } from 'lucide-react';
+import { PRESET_MUSIC } from '../types';
+import { useTimeline } from '../hooks/useTimeline';
+import { Volume2, VolumeX, TreePine, Sparkles, Loader, Frown, HelpCircle, Play } from 'lucide-react';
+
+// 检测文字是否包含中文
+const containsChinese = (text: string): boolean => /[\u4e00-\u9fa5]/.test(text);
+
+// 判断是否应该使用 CSS 文字特效
+const shouldUseCSSText = (text: string, animation?: string): boolean => {
+  if (!animation || animation === 'auto') {
+    return containsChinese(text);
+  }
+  return animation !== 'particle';
+};
 
 // 深度合并配置对象
 function deepMergeConfig<T extends Record<string, unknown>>(target: T, source: Partial<T>): T {
@@ -92,6 +105,23 @@ export default function SharePage({ shareId }: SharePageProps) {
     ribbons: { enabled: true, count: mobile ? 30 : 50 },
     fog: { enabled: true, opacity: 0.3 }
   });
+
+  // 获取已配置的文字列表
+  const configuredTexts = sceneConfig.gestureTexts || 
+    (sceneConfig.gestureText ? [sceneConfig.gestureText] : ['MERRY CHRISTMAS']);
+
+  // 时间轴完成回调
+  const handleTimelineComplete = useCallback(() => {
+    setSceneState('FORMED');
+  }, []);
+
+  // 时间轴播放器
+  const timeline = useTimeline(
+    sceneConfig.timeline,
+    shareData?.photos?.length || 0,
+    handleTimelineComplete,
+    configuredTexts
+  );
 
   // 加载分享数据
   useEffect(() => {
@@ -349,6 +379,42 @@ export default function SharePage({ shareId }: SharePageProps) {
     setMusicPlaying(!musicPlaying);
   }, [musicPlaying]);
 
+  // 时间轴播放时切换音乐
+  const previousMusicRef = useRef<string | null>(null);
+  
+  useEffect(() => {
+    if (!audioRef.current) return;
+    
+    const timelineMusic = sceneConfig.timeline?.music;
+    const isPlaying = timeline.state.isPlaying;
+    
+    if (isPlaying && timelineMusic) {
+      // 保存当前音乐，开始播放时间轴音乐
+      if (previousMusicRef.current === null) {
+        previousMusicRef.current = 'default';
+      }
+      
+      const preset = PRESET_MUSIC.find(m => m.id === timelineMusic);
+      if (preset && audioRef.current.src !== preset.url) {
+        const wasPlaying = !audioRef.current.paused;
+        audioRef.current.src = preset.url;
+        audioRef.current.currentTime = 0;
+        if (wasPlaying) {
+          audioRef.current.play().catch(() => {});
+        }
+      }
+    } else if (!isPlaying && previousMusicRef.current !== null) {
+      // 停止时恢复原来的音乐
+      const wasPlaying = !audioRef.current.paused;
+      audioRef.current.src = CHRISTMAS_MUSIC_URL;
+      audioRef.current.currentTime = 0;
+      if (wasPlaying) {
+        audioRef.current.play().catch(() => {});
+      }
+      previousMusicRef.current = null;
+    }
+  }, [timeline.state.isPlaying, sceneConfig.timeline?.music]);
+
   // 加载中
   if (loading) {
     return (
@@ -397,8 +463,8 @@ export default function SharePage({ shareId }: SharePageProps) {
 
   return (
     <div style={{ width: '100vw', height: '100dvh', backgroundColor: '#000', position: 'fixed', top: 0, left: 0, overflow: 'hidden', touchAction: 'none' }}>
-      {/* 开场文案 */}
-      {sceneConfig.intro?.enabled && !introShown && (
+      {/* 开场文案 - 时间轴模式下由时间轴控制 */}
+      {!sceneConfig.timeline?.enabled && sceneConfig.intro?.enabled && !introShown && (
         <IntroOverlay
           text={sceneConfig.intro.text}
           subText={sceneConfig.intro.subText}
@@ -406,6 +472,40 @@ export default function SharePage({ shareId }: SharePageProps) {
           onComplete={() => setIntroShown(true)}
         />
       )}
+
+      {/* 时间轴模式 - 开场文案 */}
+      <IntroOverlay
+        text={timeline.introText || ''}
+        subText={timeline.introSubText}
+        duration={timeline.state.currentStep?.duration || 3000}
+        onComplete={() => {}}
+        enabled={timeline.showIntro}
+      />
+
+      {/* 时间轴模式 - 居中照片展示 */}
+      <CenterPhoto
+        src={shareData.photos[timeline.photoIndex] || ''}
+        visible={timeline.showPhoto}
+        duration={timeline.state.currentStep?.duration}
+      />
+
+      {/* 时间轴模式 - CSS 文字特效 */}
+      {(() => {
+        const actualText = timeline.useConfiguredText 
+          ? configuredTexts[0] || 'MERRY CHRISTMAS'
+          : timeline.textContent || 'MERRY CHRISTMAS';
+        const shouldUseCSS = shouldUseCSSText(actualText, timeline.textAnimation);
+        
+        return (
+          <CSSTextEffect
+            text={actualText}
+            visible={timeline.showText && shouldUseCSS}
+            animation={timeline.textAnimation === 'particle' ? 'glow' : (timeline.textAnimation || 'glow')}
+            color={sceneConfig.textEffect?.color || '#FFD700'}
+            size={48}
+          />
+        );
+      })()}
 
       {/* 3D Canvas - 教程显示时暂停渲染 */}
       <div style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0, zIndex: 1 }}>
@@ -420,18 +520,26 @@ export default function SharePage({ shareId }: SharePageProps) {
           frameloop={showTutorial ? 'never' : 'always'}
         >
           <Experience
-            sceneState={sceneState}
+            sceneState={timeline.showTree ? 'FORMED' : sceneState}
             rotationSpeed={rotationSpeed}
             config={sceneConfig}
             selectedPhotoIndex={selectedPhotoIndex}
             onPhotoSelect={setSelectedPhotoIndex}
             photoPaths={shareData.photos}
-            showHeart={showHeart}
-            showText={showText}
-            customMessage={(sceneConfig.gestureTexts || [sceneConfig.gestureText || shareData.message || 'MERRY CHRISTMAS'])[currentTextIndex] || 'MERRY CHRISTMAS'}
-            hideTree={hideTree}
+            showHeart={showHeart || timeline.showHeart}
+            showText={showText || (timeline.showText && !shouldUseCSSText(
+              timeline.useConfiguredText ? configuredTexts[0] || '' : timeline.textContent,
+              timeline.textAnimation
+            ))}
+            customMessage={timeline.showText 
+              ? (timeline.useConfiguredText ? configuredTexts[0] || 'MERRY CHRISTMAS' : timeline.textContent || 'MERRY CHRISTMAS')
+              : (sceneConfig.gestureTexts || [sceneConfig.gestureText || shareData.message || 'MERRY CHRISTMAS'])[currentTextIndex] || 'MERRY CHRISTMAS'}
+            hideTree={hideTree || (timeline.state.isPlaying && !timeline.showTree)}
             heartCount={sceneConfig.gestureEffect?.heartCount || 1500}
             textCount={sceneConfig.gestureEffect?.textCount || 1000}
+            heartCenterPhoto={timeline.heartPhotoIndex !== null ? shareData.photos[timeline.heartPhotoIndex] : undefined}
+            heartCenterPhotos={shareData.photos.length > 0 ? shareData.photos : undefined}
+            heartPhotoInterval={(sceneConfig.heartEffect as { photoInterval?: number } | undefined)?.photoInterval || 3000}
           />
         </Canvas>
       </div>
@@ -473,6 +581,30 @@ export default function SharePage({ shareId }: SharePageProps) {
         >
           {sceneState === 'CHAOS' ? <><TreePine size={18} /> 聚合</> : <><Sparkles size={18} /> 散开</>}
         </button>
+
+        {/* 时间轴播放按钮 */}
+        {sceneConfig.timeline?.enabled && sceneConfig.timeline.steps.length > 0 && (
+          <button
+            onClick={() => {
+              if (timeline.state.isPlaying) {
+                timeline.actions.stop();
+              } else {
+                timeline.actions.play();
+              }
+            }}
+            style={{ 
+              ...buttonStyle(timeline.state.isPlaying, mobile), 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '4px',
+              background: timeline.state.isPlaying ? '#E91E63' : 'rgba(0,0,0,0.7)',
+              borderColor: '#E91E63'
+            }}
+            title={timeline.state.isPlaying ? '停止故事线' : '播放故事线'}
+          >
+            <Play size={18} />
+          </button>
+        )}
       </div>
 
       {/* AI 状态 */}
