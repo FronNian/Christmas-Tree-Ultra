@@ -978,7 +978,7 @@ export default function GrandTreeApp() {
       <LyricsDisplay
         lrcUrl={getLrcUrl()}
         audioRef={audioRef}
-        visible={!!getLrcUrl()}
+        visible={!!getLrcUrl() && (sceneConfig.music?.showLyrics ?? true)}
       />
 
       {/* 自定义弹窗 */}

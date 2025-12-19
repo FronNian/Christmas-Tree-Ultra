@@ -42,6 +42,7 @@ export interface MusicConfig {
   selected: string;        // 当前选中的音乐 ID
   customUrl?: string;      // 自定义音乐 URL (base64 或 URL)
   volume: number;          // 音量 0-1
+  showLyrics?: boolean;    // 是否显示歌词字幕
 }
 
 // 预设音乐列表

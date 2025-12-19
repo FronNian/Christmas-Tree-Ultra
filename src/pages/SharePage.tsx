@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Canvas } from '@react-three/fiber';
 import * as THREE from 'three';
-import { Experience, GestureController, TitleOverlay, WelcomeTutorial, IntroOverlay, CenterPhoto, CSSTextEffect, photoScreenPositions } from '../components';
+import { Experience, GestureController, TitleOverlay, WelcomeTutorial, IntroOverlay, CenterPhoto, CSSTextEffect, LyricsDisplay, photoScreenPositions } from '../components';
 import { CHRISTMAS_MUSIC_URL } from '../config';
 import { isMobile, isTablet } from '../utils/helpers';
 import { sanitizeShareConfig, sanitizePhotos, sanitizeText } from '../utils/sanitize';
@@ -364,11 +364,39 @@ export default function SharePage({ shareId }: SharePageProps) {
     setTimeout(() => setZoomDelta(0), 100);
   }, []);
 
+  // 获取当前音乐的歌词 URL
+  const getLrcUrl = useCallback(() => {
+    const musicConfig = sceneConfig.music;
+    if (!musicConfig) return '';
+    
+    // 自定义音乐没有歌词
+    if (musicConfig.selected === 'custom') return '';
+    
+    const preset = PRESET_MUSIC.find(m => m.id === musicConfig.selected);
+    return preset?.lrc || '';
+  }, [sceneConfig.music]);
+
+  // 获取当前音乐 URL
+  const getMusicUrl = useCallback(() => {
+    const musicConfig = sceneConfig.music;
+    if (!musicConfig) return CHRISTMAS_MUSIC_URL;
+    
+    if (musicConfig.selected === 'custom' && musicConfig.customUrl) {
+      return musicConfig.customUrl;
+    }
+    
+    const preset = PRESET_MUSIC.find(m => m.id === musicConfig.selected);
+    return preset?.url || CHRISTMAS_MUSIC_URL;
+  }, [sceneConfig.music]);
+
   // 初始化音频 - 教程显示时不自动播放
   useEffect(() => {
-    audioRef.current = new Audio(CHRISTMAS_MUSIC_URL);
+    const musicUrl = getMusicUrl();
+    const volume = sceneConfig.music?.volume ?? 0.5;
+    
+    audioRef.current = new Audio(musicUrl);
     audioRef.current.loop = true;
-    audioRef.current.volume = 0.5;
+    audioRef.current.volume = volume;
 
     // 教程显示时不播放音乐
     if (!showTutorial) {
@@ -679,6 +707,13 @@ export default function SharePage({ shareId }: SharePageProps) {
         font={sceneConfig.title?.font || 'Mountains of Christmas'}
         color={sceneConfig.title?.color || '#FFD700'}
         shadowColor={sceneConfig.title?.shadowColor}
+      />
+
+      {/* 歌词显示 */}
+      <LyricsDisplay
+        lrcUrl={getLrcUrl()}
+        audioRef={audioRef}
+        visible={!!getLrcUrl() && (sceneConfig.music?.showLyrics ?? true)}
       />
 
       {/* 使用教程 */}

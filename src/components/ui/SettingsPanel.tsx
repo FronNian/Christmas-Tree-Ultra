@@ -2046,6 +2046,20 @@ export const SettingsPanel = ({
           onChange={e => onChange({ ...config, music: { ...safeConfig.music, volume: Number(e.target.value) } })}
           style={sliderStyle}
         />
+
+        {/* 歌词字幕开关 */}
+        <div style={{ ...labelStyle, marginTop: '12px' }}>
+          <span>显示歌词字幕</span>
+          <input
+            type="checkbox"
+            checked={safeConfig.music.showLyrics ?? true}
+            onChange={e => onChange({ ...config, music: { ...safeConfig.music, showLyrics: e.target.checked } })}
+            style={{ accentColor: '#FFD700' }}
+          />
+        </div>
+        <p style={{ fontSize: '9px', color: '#666', margin: '4px 0 0 0' }}>
+          部分歌曲支持歌词同步显示
+        </p>
       </CollapsibleSection>
 
       {/* AI 手势识别 */}
