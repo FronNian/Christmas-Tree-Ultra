@@ -21,17 +21,20 @@ export type GestureAction =
   | 'text'           // 显示文字
   | 'music'          // 切换音乐
   | 'screenshot'     // 截图
-  | 'reset';         // 重置视角
+  | 'reset'          // 重置视角
+  | 'zoomIn'         // 放大（拉近）
+  | 'zoomOut';       // 缩小（拉远）
 
-// 手势配置
+// 手势配置（基于 HandLandmarker 自定义识别）
 export interface GestureConfig {
-  Closed_Fist: GestureAction;
-  Open_Palm: GestureAction;
-  Pointing_Up: GestureAction;
-  Thumb_Down: GestureAction;
-  Thumb_Up: GestureAction;
-  Victory: GestureAction;
-  ILoveYou: GestureAction;
+  Closed_Fist: GestureAction;    // ✊ 握拳
+  Open_Palm: GestureAction;      // 🖐️ 张开手掌（静止时触发，移动时控制视角）
+  Pointing_Up: GestureAction;    // ☝️ 食指向上
+  Thumb_Down: GestureAction;     // 👎 大拇指向下
+  Thumb_Up: GestureAction;       // 👍 大拇指向上
+  Victory: GestureAction;        // ✌️ 剪刀手
+  ILoveYou: GestureAction;       // 🤟 我爱你
+  Pinch: GestureAction;          // 🤏 捏合（选择照片）
 }
 
 // 音乐配置
@@ -145,10 +148,17 @@ export interface SceneConfig {
   ribbons: { enabled: boolean; count: number; colors?: string[] };
   fog: { enabled: boolean; opacity: number; color?: string };
   background?: { color: string };
+  photoOrnaments?: {       // 照片装饰配置
+    enabled?: boolean;     // 是否显示照片装饰
+    scale?: number;        // 照片大小倍数 (0.5-2)
+    frameColor?: string;   // 相框颜色
+  };
   heartEffect?: { 
     color: string; 
     size?: number; 
     photoInterval?: number;
+    photoScale?: number;      // 相框大小倍数，默认1
+    frameColor?: string;      // 相框颜色，默认白色
     glowTrail?: {
       enabled?: boolean;      // 是否启用流光效果
       color?: string;         // 流光颜色

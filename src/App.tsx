@@ -58,6 +58,7 @@ export default function GrandTreeApp() {
   // 场景状态
   const [sceneState, setSceneState] = useState<SceneState>('CHAOS');
   const [rotationSpeed, setRotationSpeed] = useState(0);
+  const [palmMove, setPalmMove] = useState<{ x: number; y: number } | undefined>(undefined);
   const [aiStatus, setAiStatus] = useState("INITIALIZING...");
   const [debugMode, setDebugMode] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -108,10 +109,11 @@ export default function GrandTreeApp() {
     Closed_Fist: 'formed',
     Open_Palm: 'chaos',
     Pointing_Up: 'music',
-    Thumb_Down: 'none',
-    Thumb_Up: 'screenshot',
+    Thumb_Down: 'zoomOut',
+    Thumb_Up: 'zoomIn',
     Victory: 'text',
-    ILoveYou: 'heart'
+    ILoveYou: 'heart',
+    Pinch: 'none'
   };
 
   // 默认音乐配置
@@ -176,23 +178,37 @@ export default function GrandTreeApp() {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
-    const newPhotos: string[] = [];
-    for (const file of Array.from(files)) {
-      if (file.type.startsWith('image/')) {
+    // 转换为数组，确保移动端兼容性
+    const fileArray = Array.from(files);
+    console.log(`选择了 ${fileArray.length} 个文件`);
+    
+    // 并行处理所有图片
+    const promises = fileArray
+      .filter(file => file.type.startsWith('image/'))
+      .map(async (file) => {
         try {
           const base64 = await fileToBase64(file);
-          newPhotos.push(base64);
+          return base64;
         } catch (err) {
           console.error('Failed to convert image:', err);
+          return null;
         }
-      }
-    }
+      });
+    
+    const results = await Promise.all(promises);
+    const newPhotos = results.filter((p): p is string => p !== null);
+    
+    console.log(`成功处理 ${newPhotos.length} 张图片`);
 
     if (newPhotos.length > 0) {
       setUploadedPhotos(prev => [...prev, ...newPhotos]);
       setRefreshKey(k => k + 1);
     }
-    if (fileInputRef.current) fileInputRef.current.value = '';
+    
+    // 重置 input，确保下次可以选择相同文件
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
   }, []);
 
   // 执行手势动作
@@ -367,6 +383,20 @@ export default function GrandTreeApp() {
       }
     }
   }, [selectedPhotoIndex]);
+
+  // 处理手掌滑动控制视角
+  const handlePalmMove = useCallback((deltaX: number, deltaY: number) => {
+    setPalmMove({ x: deltaX, y: deltaY });
+    // 短暂后清除，让下一帧可以继续接收新的移动
+    setTimeout(() => setPalmMove(undefined), 50);
+  }, []);
+
+  // 处理缩放（大拇指向上/向下）
+  const [zoomDelta, setZoomDelta] = useState(0);
+  const handleZoom = useCallback((delta: number) => {
+    setZoomDelta(delta);
+    setTimeout(() => setZoomDelta(0), 100);
+  }, []);
 
   // 获取当前音乐 URL
   const getMusicUrl = useCallback(() => {
@@ -749,6 +779,8 @@ export default function GrandTreeApp() {
           <Experience
             sceneState={timeline.showTree ? 'FORMED' : sceneState}
             rotationSpeed={rotationSpeed}
+            palmMove={palmMove}
+            zoomDelta={zoomDelta}
             config={sceneConfig}
             selectedPhotoIndex={selectedPhotoIndex}
             onPhotoSelect={setSelectedPhotoIndex}
@@ -780,6 +812,8 @@ export default function GrandTreeApp() {
         enabled={aiEnabled}
         isPhotoSelected={selectedPhotoIndex !== null}
         onPinch={handlePinch}
+        onPalmMove={handlePalmMove}
+        onZoom={handleZoom}
       />
 
       {/* 设置面板 */}
@@ -961,7 +995,7 @@ export default function GrandTreeApp() {
 
       {/* 首次访问教程 */}
       {showTutorial && (
-        <WelcomeTutorial onClose={() => setShowTutorial(false)} />
+        <WelcomeTutorial onClose={() => setShowTutorial(false)} gestureConfig={sceneConfig.gestures} />
       )}
 
       {/* 隐私政策 */}

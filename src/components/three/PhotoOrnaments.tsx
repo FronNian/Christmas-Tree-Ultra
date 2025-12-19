@@ -4,6 +4,7 @@ import { useTexture } from '@react-three/drei';
 import * as THREE from 'three';
 import { MathUtils } from 'three';
 import { CONFIG } from '../../config';
+import { isMobile } from '../../utils/helpers';
 import type { SceneState, PhotoScreenPosition, AnimationEasing, ScatterShape, GatherShape } from '../../types';
 
 // 全局变量存储照片位置，用于捏合选择
@@ -132,6 +133,8 @@ interface PhotoOrnamentsProps {
   speed?: number;
   scatterShape?: ScatterShape;
   gatherShape?: GatherShape;
+  photoScale?: number;      // 照片大小倍数
+  frameColor?: string;      // 相框颜色
 }
 
 export const PhotoOrnaments = ({ 
@@ -142,7 +145,9 @@ export const PhotoOrnaments = ({
   easing = 'easeInOut',
   speed = 1,
   scatterShape = 'sphere',
-  gatherShape = 'direct'
+  gatherShape = 'direct',
+  photoScale = 1.5,
+  frameColor = '#FFFFFF'
 }: PhotoOrnamentsProps) => {
   const textures = useTexture(photoPaths);
   const count = photoPaths.length;
@@ -164,8 +169,30 @@ export const PhotoOrnaments = ({
     });
   }, [textures]);
 
-  const borderGeometry = useMemo(() => new THREE.PlaneGeometry(1.2, 1.5), []);
-  const photoGeometry = useMemo(() => new THREE.PlaneGeometry(1, 1), []);
+  // 相框样式：照片 + 外框 + 内衬
+  const photoSize = 1 * photoScale;
+  const innerBorder = 0.03 * photoScale; // 内衬宽度（深色）
+  const outerBorder = 0.08 * photoScale; // 外框宽度
+  const innerSize = photoSize + innerBorder * 2;
+  const frameSize = innerSize + outerBorder * 2;
+  const photoGeometry = useMemo(
+    () => new THREE.PlaneGeometry(photoSize, photoSize),
+    [photoSize]
+  );
+  const innerGeometry = useMemo(
+    () => new THREE.PlaneGeometry(innerSize, innerSize),
+    [innerSize]
+  );
+  const frameGeometry = useMemo(
+    () => new THREE.PlaneGeometry(frameSize, frameSize),
+    [frameSize]
+  );
+  // 计算内衬颜色（比相框颜色深一点）
+  const innerColor = useMemo(() => {
+    const color = new THREE.Color(frameColor);
+    color.multiplyScalar(0.7); // 变暗30%
+    return '#' + color.getHexString();
+  }, [frameColor]);
 
   // 基础数据（不依赖 scatterShape）
   const data = useMemo(() => {
@@ -278,8 +305,12 @@ export const PhotoOrnaments = ({
         // 图片移动到相机正前方（选中时使用直接 lerp）
         const cameraDir = new THREE.Vector3();
         camera.getWorldDirection(cameraDir);
-        const target = camera.position.clone().add(cameraDir.multiplyScalar(25));
-        targetScale = 15;
+        // 移动端距离更近，桌面端稍远
+        const mobile = isMobile();
+        const distance = mobile ? 20 : 28;
+        const target = camera.position.clone().add(cameraDir.multiplyScalar(distance));
+        // 选中时的缩放：移动端适中，桌面端稍大
+        targetScale = mobile ? 6 : 8;
         objData.currentPos.lerp(target, delta * 8);
         group.position.copy(objData.currentPos);
       } else {
@@ -343,41 +374,41 @@ export const PhotoOrnaments = ({
           rotation={state === 'CHAOS' ? obj.chaosRotation : [0, 0, 0]}
           onClick={() => onPhotoClick?.(selectedIndex === i ? null : i)}
         >
-          <group position={[0, 0, 0.015]}>
+          {/* 正面 */}
+          <group position={[0, 0, 0.02]}>
+            {/* 外框 */}
+            <mesh geometry={frameGeometry} position={[0, 0, -0.02]}>
+              <meshBasicMaterial color={frameColor} side={THREE.FrontSide} />
+            </mesh>
+            {/* 内衬 */}
+            <mesh geometry={innerGeometry} position={[0, 0, -0.01]}>
+              <meshBasicMaterial color={innerColor} side={THREE.FrontSide} />
+            </mesh>
+            {/* 照片 */}
             <mesh geometry={photoGeometry}>
               <meshBasicMaterial
                 map={textures[obj.textureIndex]}
                 side={THREE.FrontSide}
                 toneMapped={false}
-              />
-            </mesh>
-            <mesh geometry={borderGeometry} position={[0, -0.15, -0.01]}>
-              <meshStandardMaterial
-                color="#FFFFFF"
-                emissive="#FFFFFF"
-                emissiveIntensity={1.2}
-                roughness={0.3}
-                metalness={0}
-                side={THREE.FrontSide}
               />
             </mesh>
           </group>
-          <group position={[0, 0, -0.015]} rotation={[0, Math.PI, 0]}>
+          {/* 背面 */}
+          <group position={[0, 0, -0.02]} rotation={[0, Math.PI, 0]}>
+            {/* 外框 */}
+            <mesh geometry={frameGeometry} position={[0, 0, -0.02]}>
+              <meshBasicMaterial color={frameColor} side={THREE.FrontSide} />
+            </mesh>
+            {/* 内衬 */}
+            <mesh geometry={innerGeometry} position={[0, 0, -0.01]}>
+              <meshBasicMaterial color={innerColor} side={THREE.FrontSide} />
+            </mesh>
+            {/* 照片 */}
             <mesh geometry={photoGeometry}>
               <meshBasicMaterial
                 map={textures[obj.textureIndex]}
                 side={THREE.FrontSide}
                 toneMapped={false}
-              />
-            </mesh>
-            <mesh geometry={borderGeometry} position={[0, -0.15, -0.01]}>
-              <meshStandardMaterial
-                color="#FFFFFF"
-                emissive="#FFFFFF"
-                emissiveIntensity={1.2}
-                roughness={0.3}
-                metalness={0}
-                side={THREE.FrontSide}
               />
             </mesh>
           </group>

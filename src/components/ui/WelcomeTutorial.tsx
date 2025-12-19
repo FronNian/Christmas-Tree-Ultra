@@ -1,14 +1,71 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { 
   X, ChevronRight, ChevronLeft, 
   Camera, Settings, Link, TreePine, Sparkles, Hand
 } from 'lucide-react';
 import { isMobile } from '../../utils/helpers';
+import type { GestureConfig, GestureAction } from '../../types';
 
 interface WelcomeTutorialProps {
   onClose: () => void;
   isSharePage?: boolean;
+  gestureConfig?: GestureConfig;  // 手势配置
 }
+
+// 手势名称映射
+const gestureNames: Record<keyof GestureConfig, string> = {
+  Closed_Fist: '✊ 握拳',
+  Open_Palm: '🖐 张开手掌',
+  Pointing_Up: '☝️ 食指向上',
+  Thumb_Down: '👎 拇指向下',
+  Thumb_Up: '👍 拇指向上',
+  Victory: '✌️ 剪刀手',
+  ILoveYou: '🤟 我爱你',
+  Pinch: '🤏 捏合'
+};
+
+// 动作名称映射
+const actionNames: Record<GestureAction, string> = {
+  none: '无动作',
+  formed: '聚合',
+  chaos: '散开',
+  heart: '爱心特效',
+  text: '文字特效',
+  music: '切换音乐',
+  screenshot: '截图',
+  reset: '重置视角',
+  zoomIn: '放大',
+  zoomOut: '缩小'
+};
+
+// 生成手势说明文本
+const generateGestureText = (config?: GestureConfig): string => {
+  const defaultConfig: GestureConfig = {
+    Closed_Fist: 'formed',
+    Open_Palm: 'chaos',
+    Pointing_Up: 'music',
+    Thumb_Down: 'zoomOut',
+    Thumb_Up: 'zoomIn',
+    Victory: 'text',
+    ILoveYou: 'heart',
+    Pinch: 'none'
+  };
+  
+  const gestures = config || defaultConfig;
+  const lines: string[] = [];
+  
+  // 按优先级排序显示（常用的在前）
+  const order: (keyof GestureConfig)[] = ['Open_Palm', 'Closed_Fist', 'Victory', 'ILoveYou', 'Pointing_Up', 'Thumb_Up', 'Thumb_Down'];
+  
+  for (const key of order) {
+    const action = gestures[key];
+    if (action && action !== 'none') {
+      lines.push(`• ${gestureNames[key]} → ${actionNames[action]}`);
+    }
+  }
+  
+  return lines.length > 0 ? lines.join('\n') : '• 暂无配置手势';
+};
 
 // 主页教程步骤
 const mainTutorialSteps = [
@@ -44,8 +101,8 @@ const mainTutorialSteps = [
   }
 ];
 
-// 分享页教程步骤 - 简洁直接，只说明操作
-const shareTutorialSteps = [
+// 生成分享页教程步骤（根据手势配置动态生成）
+const getShareTutorialSteps = (gestureConfig?: GestureConfig) => [
   {
     title: '操作说明 🎮',
     content: '• 点击「聚合/散开」按钮切换圣诞树形态\n• 点击 🔊 按钮控制背景音乐\n• 点击 ❓ 按钮可再次查看帮助',
@@ -54,17 +111,19 @@ const shareTutorialSteps = [
   },
   {
     title: '手势控制 ✋',
-    content: '开启摄像头后可用手势控制：\n• 张开手掌 → 散开\n• 握拳 → 聚合\n• 剪刀手 → 文字特效\n• 🤟 手势 → 爱心特效',
+    content: `开启摄像头后可用手势控制：\n${generateGestureText(gestureConfig)}`,
     icon: Hand,
     color: '#4CAF50'
   }
 ];
 
-export const WelcomeTutorial = ({ onClose, isSharePage = false }: WelcomeTutorialProps) => {
+export const WelcomeTutorial = ({ onClose, isSharePage = false, gestureConfig }: WelcomeTutorialProps) => {
   const mobile = isMobile();
   const [currentStep, setCurrentStep] = useState(0);
   const [visible, setVisible] = useState(true);
   
+  // 根据手势配置动态生成教程步骤
+  const shareTutorialSteps = useMemo(() => getShareTutorialSteps(gestureConfig), [gestureConfig]);
   const steps = isSharePage ? shareTutorialSteps : mainTutorialSteps;
   const totalSteps = steps.length;
   const currentStepData = steps[currentStep];

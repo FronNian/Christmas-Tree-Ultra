@@ -7,7 +7,7 @@ import { TimelineEditor } from './TimelineEditor';
 import { 
   TreePine, Sparkles, Heart, Type, X, Settings,
   TreeDeciduous, Lightbulb, Gift, Ribbon, Snowflake, CloudFog, Star, Rainbow, Bot, Hand, Music, Upload, Zap, Palette,
-  ChevronDown, ChevronRight, Film
+  ChevronDown, ChevronRight, Film, Image
 } from 'lucide-react';
 
 // 可折叠分组组件
@@ -108,24 +108,27 @@ const gatherShapeOptions: { value: GatherShape; label: string; desc: string }[] 
 // 手势动作选项
 const gestureActionOptions: { value: GestureAction; label: string }[] = [
   { value: 'none', label: '无动作' },
-  { value: 'formed', label: '聚合' },
-  { value: 'chaos', label: '散开' },
-  { value: 'heart', label: '爱心' },
+  { value: 'formed', label: '✊ 聚合' },
+  { value: 'chaos', label: '🖐️ 散开' },
+  { value: 'heart', label: '❤️ 爱心' },
   { value: 'text', label: '✨ 文字' },
   { value: 'music', label: '🎵 音乐' },
   { value: 'screenshot', label: '📸 截图' },
-  { value: 'reset', label: '🔄 重置' }
+  { value: 'reset', label: '🔄 重置' },
+  { value: 'zoomIn', label: '🔍 放大' },
+  { value: 'zoomOut', label: '🔎 缩小' }
 ];
 
 // 手势名称映射
 const gestureNames: Record<keyof GestureConfig, string> = {
   Closed_Fist: '✊ 握拳',
-  Open_Palm: '🖐 张开手掌',
+  Open_Palm: '🖐️ 张开手掌 (移动控制视角)',
   Pointing_Up: '☝️ 食指向上',
   Thumb_Down: '👎 拇指向下',
   Thumb_Up: '👍 拇指向上',
   Victory: '✌️ 剪刀手',
-  ILoveYou: '🤟 我爱你'
+  ILoveYou: '🤟 我爱你',
+  Pinch: '🤏 捏合 (选择照片)'
 };
 
 interface SettingsPanelProps {
@@ -150,10 +153,11 @@ export const SettingsPanel = ({
     Closed_Fist: 'formed',
     Open_Palm: 'chaos',
     Pointing_Up: 'music',
-    Thumb_Down: 'none',
-    Thumb_Up: 'screenshot',
+    Thumb_Down: 'zoomOut',
+    Thumb_Up: 'zoomIn',
     Victory: 'text',
-    ILoveYou: 'heart'
+    ILoveYou: 'heart',
+    Pinch: 'none'  // 捏合固定用于选择照片，不可配置
   };
 
   const defaultMusic: MusicConfig = {
@@ -1007,6 +1011,92 @@ export const SettingsPanel = ({
         </div>
       </CollapsibleSection>
 
+      {/* 照片装饰 */}
+      <CollapsibleSection title="照片装饰" icon={<Image size={14} />}>
+        <p style={{ fontSize: '10px', color: '#888', margin: '0 0 8px 0' }}>
+          已上传 {photoCount} 张照片
+        </p>
+        
+        {/* 照片大小 */}
+        <div style={{ ...labelStyle, marginTop: '8px' }}>
+          <span>照片大小: {(config.photoOrnaments?.scale || 1.5).toFixed(1)}x</span>
+        </div>
+        <input
+          type="range"
+          min="0.5"
+          max="3"
+          step="0.1"
+          value={config.photoOrnaments?.scale || 1.5}
+          onChange={e => onChange({ 
+            ...config, 
+            photoOrnaments: { 
+              ...config.photoOrnaments, 
+              scale: Number(e.target.value) 
+            } 
+          })}
+          style={sliderStyle}
+        />
+        
+        {/* 相框颜色 */}
+        <div style={{ marginTop: '10px' }}>
+          <span style={{ fontSize: '10px', color: '#888' }}>相框颜色</span>
+          <input
+            type="color"
+            value={config.photoOrnaments?.frameColor || '#FFFFFF'}
+            onChange={e => onChange({ 
+              ...config, 
+              photoOrnaments: { 
+                ...config.photoOrnaments, 
+                frameColor: e.target.value 
+              } 
+            })}
+            style={{ width: '100%', height: '28px', cursor: 'pointer', border: 'none', borderRadius: '4px', marginTop: '4px' }}
+          />
+        </div>
+        
+        {/* 预览 */}
+        <div style={{ 
+          marginTop: '10px', 
+          padding: '10px', 
+          background: 'rgba(0,0,0,0.3)', 
+          borderRadius: '4px',
+          display: 'flex',
+          justifyContent: 'center'
+        }}>
+          <div style={{
+            width: '50px',
+            height: '50px',
+            background: config.photoOrnaments?.frameColor || '#FFFFFF',
+            borderRadius: '2px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
+          }}>
+            <div style={{
+              width: '38px',
+              height: '38px',
+              background: '#333',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}>
+              <div style={{
+                width: '32px',
+                height: '32px',
+                background: '#888',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '16px'
+              }}>
+                🖼️
+              </div>
+            </div>
+          </div>
+        </div>
+      </CollapsibleSection>
+
       {/* 螺旋带子 */}
       <CollapsibleSection title="螺旋带子" icon={<Ribbon size={14} />}>
         <div style={labelStyle}>
@@ -1428,6 +1518,48 @@ export const SettingsPanel = ({
         <p style={{ fontSize: '9px', color: '#666', margin: '2px 0 0 0' }}>
           爱心中照片轮播的切换间隔
         </p>
+        
+        {/* 相框设置 */}
+        <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+          <span style={{ fontSize: '11px', color: '#FFD700', fontWeight: 'bold' }}>🖼️ 相框设置</span>
+          
+          <div style={{ ...labelStyle, marginTop: '8px' }}>
+            <span>相框大小: {(config.heartEffect?.photoScale || 1).toFixed(1)}x</span>
+          </div>
+          <input
+            type="range"
+            min="0.5"
+            max="2"
+            step="0.1"
+            value={config.heartEffect?.photoScale || 1}
+            onChange={e => onChange({ 
+              ...config, 
+              heartEffect: { 
+                ...config.heartEffect, 
+                color: config.heartEffect?.color || '#FF1493',
+                photoScale: Number(e.target.value) 
+              } 
+            })}
+            style={sliderStyle}
+          />
+          
+          <div style={{ marginTop: '8px' }}>
+            <span style={{ fontSize: '10px', color: '#888' }}>相框颜色</span>
+            <input
+              type="color"
+              value={config.heartEffect?.frameColor || '#FFFFFF'}
+              onChange={e => onChange({ 
+                ...config, 
+                heartEffect: { 
+                  ...config.heartEffect, 
+                  color: config.heartEffect?.color || '#FF1493',
+                  frameColor: e.target.value 
+                } 
+              })}
+              style={{ width: '100%', height: '28px', cursor: 'pointer', border: 'none', borderRadius: '4px' }}
+            />
+          </div>
+        </div>
         
         {/* 爱心流光效果 */}
         <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: '1px solid rgba(255,255,255,0.1)' }}>

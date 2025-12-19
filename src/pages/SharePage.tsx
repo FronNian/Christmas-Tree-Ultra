@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Canvas } from '@react-three/fiber';
 import * as THREE from 'three';
-import { Experience, GestureController, TitleOverlay, WelcomeTutorial, IntroOverlay, CenterPhoto, CSSTextEffect } from '../components';
+import { Experience, GestureController, TitleOverlay, WelcomeTutorial, IntroOverlay, CenterPhoto, CSSTextEffect, photoScreenPositions } from '../components';
 import { CHRISTMAS_MUSIC_URL } from '../config';
 import { isMobile } from '../utils/helpers';
 import { sanitizeShareConfig, sanitizePhotos, sanitizeText } from '../utils/sanitize';
@@ -62,6 +62,8 @@ export default function SharePage({ shareId }: SharePageProps) {
   // 场景状态
   const [sceneState, setSceneState] = useState<SceneState>('FORMED');
   const [rotationSpeed, setRotationSpeed] = useState(0);
+  const [palmMove, setPalmMove] = useState<{ x: number; y: number } | undefined>(undefined);
+  const [zoomDelta, setZoomDelta] = useState(0);
   const [aiStatus, setAiStatus] = useState("INITIALIZING...");
   const [musicPlaying, setMusicPlaying] = useState(true);
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState<number | null>(null);
@@ -324,6 +326,44 @@ export default function SharePage({ shareId }: SharePageProps) {
     }
   }, [sceneConfig.gestures, executeGestureAction]);
 
+  // 处理捏合选择照片
+  const handlePinch = useCallback((pos: { x: number; y: number }) => {
+    if (selectedPhotoIndex !== null) {
+      setSelectedPhotoIndex(null);
+    } else {
+      let closestIndex = 0;
+      let closestDist = Infinity;
+
+      photoScreenPositions.forEach((photoPos) => {
+        if (photoPos) {
+          const dx = photoPos.x - pos.x;
+          const dy = photoPos.y - pos.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist < closestDist) {
+            closestDist = dist;
+            closestIndex = photoPos.index;
+          }
+        }
+      });
+
+      if (closestDist < 0.15) {
+        setSelectedPhotoIndex(closestIndex);
+      }
+    }
+  }, [selectedPhotoIndex]);
+
+  // 处理手掌滑动控制视角
+  const handlePalmMove = useCallback((deltaX: number, deltaY: number) => {
+    setPalmMove({ x: deltaX, y: deltaY });
+    setTimeout(() => setPalmMove(undefined), 50);
+  }, []);
+
+  // 处理缩放（大拇指向上/向下）
+  const handleZoom = useCallback((delta: number) => {
+    setZoomDelta(delta);
+    setTimeout(() => setZoomDelta(0), 100);
+  }, []);
+
   // 初始化音频 - 教程显示时不自动播放
   useEffect(() => {
     audioRef.current = new Audio(CHRISTMAS_MUSIC_URL);
@@ -522,6 +562,8 @@ export default function SharePage({ shareId }: SharePageProps) {
           <Experience
             sceneState={timeline.showTree ? 'FORMED' : sceneState}
             rotationSpeed={rotationSpeed}
+            palmMove={palmMove}
+            zoomDelta={zoomDelta}
             config={sceneConfig}
             selectedPhotoIndex={selectedPhotoIndex}
             onPhotoSelect={setSelectedPhotoIndex}
@@ -552,6 +594,9 @@ export default function SharePage({ shareId }: SharePageProps) {
         debugMode={false}
         enabled={!showTutorial}
         isPhotoSelected={selectedPhotoIndex !== null}
+        onPinch={handlePinch}
+        onPalmMove={handlePalmMove}
+        onZoom={handleZoom}
       />
 
       {/* 底部按钮 - 分享模式只显示音乐、帮助和聚合/散开 */}
@@ -635,7 +680,7 @@ export default function SharePage({ shareId }: SharePageProps) {
       />
 
       {/* 使用教程 */}
-      {showTutorial && <WelcomeTutorial onClose={() => setShowTutorial(false)} isSharePage />}
+      {showTutorial && <WelcomeTutorial onClose={() => setShowTutorial(false)} isSharePage gestureConfig={sceneConfig.gestures} />}
     </div>
   );
 }

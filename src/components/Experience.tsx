@@ -37,6 +37,8 @@ interface ExperienceProps {
   heartCenterPhoto?: string; // 爱心特效中心显示的照片（单张）
   heartCenterPhotos?: string[]; // 爱心特效中心轮播的照片（多张）
   heartPhotoInterval?: number; // 照片轮播间隔（毫秒）
+  palmMove?: { x: number; y: number }; // 手掌滑动控制视角
+  zoomDelta?: number; // 缩放增量（大拇指控制）
 }
 
 export const Experience = ({
@@ -53,7 +55,9 @@ export const Experience = ({
   heartCount = 1500,
   heartCenterPhoto,
   heartCenterPhotos,
-  heartPhotoInterval = 3000
+  heartPhotoInterval = 3000,
+  palmMove,
+  zoomDelta = 0
 }: ExperienceProps) => {
   const controlsRef = useRef<any>(null);
   const isPhotoSelected = selectedPhotoIndex !== null;
@@ -75,9 +79,34 @@ export const Experience = ({
     fog: config.fog || { enabled: true, opacity: 0.3 }
   };
 
-  useFrame(() => {
+  useFrame((state) => {
     if (controlsRef.current && !isPhotoSelected) {
-      controlsRef.current.setAzimuthalAngle(controlsRef.current.getAzimuthalAngle() + rotationSpeed);
+      // 手掌滑动控制视角
+      if (palmMove && (Math.abs(palmMove.x) > 0.001 || Math.abs(palmMove.y) > 0.001)) {
+        const currentAzimuth = controlsRef.current.getAzimuthalAngle();
+        const currentPolar = controlsRef.current.getPolarAngle();
+        controlsRef.current.setAzimuthalAngle(currentAzimuth + palmMove.x);
+        // 限制极角范围
+        const newPolar = Math.max(Math.PI / 4, Math.min(Math.PI / 1.8, currentPolar + palmMove.y));
+        controlsRef.current.setPolarAngle(newPolar);
+      } else {
+        // 没有手掌控制时使用自动旋转
+        controlsRef.current.setAzimuthalAngle(controlsRef.current.getAzimuthalAngle() + rotationSpeed);
+      }
+      
+      // 大拇指缩放控制
+      if (zoomDelta !== 0) {
+        const camera = state.camera;
+        const direction = new THREE.Vector3();
+        camera.getWorldDirection(direction);
+        // 限制缩放范围
+        const currentDist = camera.position.length();
+        const newDist = currentDist + zoomDelta;
+        if (newDist >= 25 && newDist <= 100) {
+          camera.position.addScaledVector(direction, -zoomDelta);
+        }
+      }
+      
       controlsRef.current.update();
     }
   });
@@ -154,6 +183,8 @@ export const Experience = ({
                 speed={config.animation?.speed}
                 scatterShape={config.animation?.scatterShape}
                 gatherShape={config.animation?.gatherShape}
+                photoScale={config.photoOrnaments?.scale || 1.5}
+                frameColor={config.photoOrnaments?.frameColor || '#FFFFFF'}
               />
             )}
             {safeConfig.elements.enabled && (
@@ -222,6 +253,8 @@ export const Experience = ({
         centerPhoto={heartCenterPhoto}
         centerPhotos={heartCenterPhotos}
         photoInterval={heartPhotoInterval}
+        photoScale={config.heartEffect?.photoScale || 1}
+        frameColor={config.heartEffect?.frameColor || '#FFFFFF'}
         glowTrail={{
           enabled: config.heartEffect?.glowTrail?.enabled ?? true,
           color: config.heartEffect?.glowTrail?.color || config.heartEffect?.color || '#FF1493',

@@ -1,4 +1,4 @@
-import { useRef, useMemo, useState, useEffect, useCallback } from 'react';
+import { useRef, useMemo, useState, useEffect } from 'react';
 import { useFrame, useThree, useLoader } from '@react-three/fiber';
 import * as THREE from 'three';
 
@@ -10,6 +10,8 @@ interface HeartParticlesProps {
   centerPhoto?: string; // 单张照片URL（兼容旧版）
   centerPhotos?: string[]; // 多张照片URL数组
   photoInterval?: number; // 照片切换间隔（毫秒），默认3000
+  photoScale?: number;    // 照片大小倍数，默认1
+  frameColor?: string;    // 相框颜色，默认白色
   // 边框流动效果配置
   glowTrail?: {
     enabled?: boolean;      // 是否启用
@@ -98,33 +100,69 @@ const generateScatteredPositions = (count: number): Float32Array => {
   return positions;
 };
 
-// 单张照片组件
-const PhotoPlane = ({ 
+// 带相框的照片组件
+const PhotoFrame = ({ 
   photoUrl, 
   offsetX, 
   opacity, 
-  scale 
+  scale,
+  frameColor = '#FFFFFF',
+  frameWidth = 0.15
 }: { 
   photoUrl: string; 
   offsetX: number; 
   opacity: number;
   scale: number;
+  frameColor?: string;
+  frameWidth?: number;
 }) => {
   const texture = useLoader(THREE.TextureLoader, photoUrl);
   
   if (!texture) return null;
   
+  const photoWidth = 4;
+  const photoHeight = 5;
+  const totalWidth = photoWidth + frameWidth * 2;
+  const totalHeight = photoHeight + frameWidth * 2;
+  
   return (
-    <mesh position={[offsetX, 0, 0.5]} scale={scale}>
-      <planeGeometry args={[4, 5]} />
-      <meshBasicMaterial 
-        map={texture} 
-        transparent 
-        opacity={opacity}
-        side={THREE.DoubleSide}
-        depthWrite={false}
-      />
-    </mesh>
+    <group position={[offsetX, 0, 0.5]} scale={scale}>
+      {/* 相框背景 */}
+      <mesh position={[0, 0, -0.02]}>
+        <planeGeometry args={[totalWidth, totalHeight]} />
+        <meshBasicMaterial 
+          color={frameColor}
+          transparent 
+          opacity={opacity}
+          side={THREE.DoubleSide}
+          depthWrite={false}
+        />
+      </mesh>
+      
+      {/* 相框内阴影（增加立体感） */}
+      <mesh position={[0, 0, -0.01]}>
+        <planeGeometry args={[photoWidth + 0.1, photoHeight + 0.1]} />
+        <meshBasicMaterial 
+          color="#000000"
+          transparent 
+          opacity={opacity * 0.3}
+          side={THREE.DoubleSide}
+          depthWrite={false}
+        />
+      </mesh>
+      
+      {/* 照片 */}
+      <mesh position={[0, 0, 0]}>
+        <planeGeometry args={[photoWidth, photoHeight]} />
+        <meshBasicMaterial 
+          map={texture} 
+          transparent 
+          opacity={opacity}
+          side={THREE.DoubleSide}
+          depthWrite={false}
+        />
+      </mesh>
+    </group>
   );
 };
 
@@ -133,12 +171,16 @@ const PhotoCarousel = ({
   photos, 
   visible, 
   progress,
-  interval = 3000
+  interval = 3000,
+  photoScale = 1,
+  frameColor = '#FFFFFF'
 }: { 
   photos: string[]; 
   visible: boolean; 
   progress: number;
   interval?: number;
+  photoScale?: number;
+  frameColor?: string;
 }) => {
   const groupRef = useRef<THREE.Group>(null);
   const currentIndexRef = useRef(0);
@@ -206,7 +248,7 @@ const PhotoCarousel = ({
   
   if (!visible || photos.length === 0) return null;
   
-  const baseScale = progress * 0.8;
+  const baseScale = progress * 0.8 * photoScale;
   const baseOpacity = progress * 0.95;
   const slideOffset = slideProgress * 6;
   
@@ -214,26 +256,28 @@ const PhotoCarousel = ({
   
   return (
     <group ref={groupRef}>
-      <PhotoPlane
+      <PhotoFrame
         photoUrl={photos[displayIndex]}
         offsetX={-slideOffset}
         opacity={baseOpacity * (1 - slideProgress * 0.5)}
         scale={baseScale}
+        frameColor={frameColor}
       />
       {isSliding && photos.length > 1 && (
-        <PhotoPlane
+        <PhotoFrame
           photoUrl={photos[nextIndex]}
           offsetX={6 - slideOffset}
           opacity={baseOpacity * slideProgress}
           scale={baseScale}
+          frameColor={frameColor}
         />
       )}
     </group>
   );
 };
 
-// 兼容旧版单张照片
-const CenterPhotoPlane = ({ photoUrl, visible, progress }: { photoUrl: string; visible: boolean; progress: number }) => {
+// 兼容旧版单张照片（保留以备后用）
+const _CenterPhotoPlane = ({ photoUrl, visible, progress }: { photoUrl: string; visible: boolean; progress: number }) => {
   return (
     <PhotoCarousel 
       photos={[photoUrl]} 
@@ -242,6 +286,7 @@ const CenterPhotoPlane = ({ photoUrl, visible, progress }: { photoUrl: string; v
     />
   );
 };
+void _CenterPhotoPlane; // 避免 TS 未使用警告
 
 // 创建圆形发光纹理
 const createGlowTexture = (): THREE.Texture => {
@@ -460,6 +505,8 @@ export const HeartParticles = ({
   centerPhoto,
   centerPhotos,
   photoInterval = 3000,
+  photoScale = 1,
+  frameColor = '#FFFFFF',
   glowTrail = { enabled: true }
 }: HeartParticlesProps) => {
   const groupRef = useRef<THREE.Group>(null);
@@ -608,19 +655,23 @@ export const HeartParticles = ({
         }}
       />
       
-      {/* 中心照片轮播 */}
+      {/* 中心相框轮播 */}
       {(centerPhotos && centerPhotos.length > 0) ? (
         <PhotoCarousel 
           photos={centerPhotos} 
           visible={visible} 
           progress={progress}
           interval={photoInterval}
+          photoScale={photoScale}
+          frameColor={frameColor}
         />
       ) : centerPhoto ? (
-        <CenterPhotoPlane 
-          photoUrl={centerPhoto} 
+        <PhotoCarousel 
+          photos={[centerPhoto]} 
           visible={visible} 
-          progress={progress} 
+          progress={progress}
+          photoScale={photoScale}
+          frameColor={frameColor}
         />
       ) : null}
     </group>
