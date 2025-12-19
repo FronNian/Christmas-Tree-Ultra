@@ -47,6 +47,7 @@ export const PRESET_MUSIC = [
   { id: 'all-i-want', name: '🎄 All I Want for Christmas Is You', url: '/music/All I Want for Christmas Is You - Mariah Carey.mp3', lrc: '/music/All I Want for Christmas Is You - Mariah Carey.lrc' },
   { id: 'christmas-list', name: '📝 Christmas List', url: '/music/Christmas List - Anson Seabra.mp3', lrc: '/music/Christmas List - Anson Seabra.lrc' },
   { id: 'i-love-you-so', name: '💕 I Love You So', url: '/music/I Love You So - The Walters.mp3', lrc: '/music/I Love You So - The Walters.lrc' },
+  { id: 'yi-dian-dian', name: '✨ 一点点 (为什么晚上总是有星星)', url: '/music/一点点 (为什么晚上总是有星星) - 董唧唧、芊芊龍.mp3', lrc: '/music/一点点 (为什么晚上总是有星星) - 董唧唧、芊芊龍.lrc' },
 ] as const;
 
 // 动画缓动类型
@@ -100,9 +101,29 @@ export interface LightColors {
   color4: string;
 }
 
+// 螺旋带子配置
+export interface SpiralRibbonConfig {
+  enabled: boolean;
+  color: string;           // 带子颜色
+  glowColor: string;       // 发光颜色
+  width: number;           // 带子宽度 0.3-2
+  turns: number;           // 盘旋圈数 2-8
+  double: boolean;         // 是否双层（两条交错的带子）
+}
+
+// 树叶粒子配置
+export interface FoliageConfig {
+  enabled: boolean;
+  count: number;              // 粒子数量 5000-25000
+  color: string;              // 聚合后颜色
+  chaosColor?: string;        // 散开时颜色（可选，不设置则使用暗色）
+  size: number;               // 粒子大小倍数 0.5-2
+  glow: number;               // 发光强度 0.5-2
+}
+
 // 场景配置类型
 export interface SceneConfig {
-  foliage: { enabled: boolean; count: number };
+  foliage: FoliageConfig;
   animation?: AnimationConfig;  // 聚合/散开动画配置
   lights: { enabled: boolean; count: number; colors?: LightColors };
   elements: { 
@@ -117,12 +138,17 @@ export interface SceneConfig {
   };
   snow: { enabled: boolean; count: number; speed: number; size: number; opacity: number };
   sparkles: { enabled: boolean; count: number };
-  stars: { enabled: boolean };
+  stars: { enabled: boolean; count?: number; brightness?: number };
   bloom: { enabled: boolean; intensity: number };
-  title: { enabled: boolean; text: string; size: number; font?: string };
-  giftPile: { enabled: boolean; count: number };
-  ribbons: { enabled: boolean; count: number };
-  fog: { enabled: boolean; opacity: number };
+  title: { enabled: boolean; text: string; size: number; font?: string; color?: string; shadowColor?: string };
+  giftPile: { enabled: boolean; count: number; colors?: string[] };
+  ribbons: { enabled: boolean; count: number; colors?: string[] };
+  fog: { enabled: boolean; opacity: number; color?: string };
+  background?: { color: string };
+  heartEffect?: { color: string; size?: number; photoInterval?: number };
+  textEffect?: { color: string; size?: number };
+  treeShape?: { height: number; radius: number };
+  spiralRibbon?: SpiralRibbonConfig;  // 螺旋带子配置
   topStar?: { avatarUrl?: string };  // 树顶星星头像
   intro?: {                // 开场文案配置
     enabled: boolean;
@@ -141,7 +167,8 @@ export interface SceneConfig {
     textCount: number;     // 文字粒子数量
     heartCount: number;    // 爱心粒子数量
   };
-  preloadText?: boolean;   // 分享链接打开时先显示文字效果
+  preloadText?: boolean;   // 分享链接打开时先显示文字效果（时间轴模式下忽略）
+  timeline?: TimelineConfig; // 时间轴/故事线配置
 }
 
 // 照片屏幕位置
@@ -160,4 +187,79 @@ export interface ShareData {
   createdAt: number;
   expiresAt: number;
   config: Record<string, unknown>;
+}
+
+// ============ 时间轴/故事线模式 ============
+
+// 时间轴步骤类型
+export type TimelineStepType = 
+  | 'intro'      // 开场文案
+  | 'photo'      // 居中显示照片
+  | 'heart'      // 爱心特效
+  | 'text'       // 文字特效
+  | 'tree';      // 圣诞树聚合（结束）
+
+// 时间轴步骤基础接口
+export interface TimelineStepBase {
+  id: string;           // 唯一标识
+  type: TimelineStepType;
+  duration: number;     // 持续时间（毫秒）
+  delay?: number;       // 开始前延迟（毫秒）
+}
+
+// 开场文案步骤
+export interface IntroStep extends TimelineStepBase {
+  type: 'intro';
+  text: string;         // 主文案
+  subText?: string;     // 副文案
+}
+
+// 照片展示步骤
+export interface PhotoStep extends TimelineStepBase {
+  type: 'photo';
+  photoIndex: number;   // 照片索引（-1 表示按顺序自动选择）
+}
+
+// 爱心特效步骤
+export interface HeartStep extends TimelineStepBase {
+  type: 'heart';
+  showPhoto?: boolean;  // 是否在中心显示照片
+  photoIndex?: number;  // 显示哪张照片（-1 表示按顺序）
+}
+
+// 文字动画类型
+export type TextAnimationType = 
+  | 'particle'      // 粒子效果（仅英文）
+  | 'fadeIn'        // 淡入
+  | 'typewriter'    // 打字机
+  | 'glow'          // 发光脉冲
+  | 'sparkle'       // 闪烁星光
+  | 'wave'          // 波浪
+  | 'bounce'        // 弹跳
+  | 'gradient'      // 渐变流动
+  | 'neon';         // 霓虹灯
+
+// 文字特效步骤
+export interface TextStep extends TimelineStepBase {
+  type: 'text';
+  text: string;                    // 显示的文字
+  animation?: TextAnimationType;   // 动画类型（默认自动：英文用粒子，中文用glow）
+  useConfiguredText?: boolean;     // 使用已配置的文字粒子内容（gestureTexts）
+}
+
+// 圣诞树聚合步骤（结束）
+export interface TreeStep extends TimelineStepBase {
+  type: 'tree';
+}
+
+// 时间轴步骤联合类型
+export type TimelineStep = IntroStep | PhotoStep | HeartStep | TextStep | TreeStep;
+
+// 时间轴配置
+export interface TimelineConfig {
+  enabled: boolean;           // 是否启用时间轴模式
+  autoPlay: boolean;          // 分享链接打开时自动播放
+  loop: boolean;              // 是否循环播放
+  steps: TimelineStep[];      // 步骤列表
+  music?: string;             // 时间轴专用音乐ID（可选，不设置则使用全局音乐）
 }

@@ -1,32 +1,40 @@
-import { useRef, useMemo } from 'react';
-import { useFrame, useThree } from '@react-three/fiber';
+import { useRef, useMemo, useState, useEffect } from 'react';
+import { useFrame, useThree, useLoader } from '@react-three/fiber';
 import * as THREE from 'three';
 
 interface HeartParticlesProps {
   visible: boolean;
   color?: string;
   count?: number;
+  size?: number;
+  centerPhoto?: string; // 单张照片URL（兼容旧版）
+  centerPhotos?: string[]; // 多张照片URL数组
+  photoInterval?: number; // 照片切换间隔（毫秒），默认3000
 }
 
-// 使用更精确的心形参数方程生成均匀分布的点
+// 使用经典心形参数方程生成点
 const generateHeartPoints = (count: number): Float32Array => {
   const positions = new Float32Array(count * 3);
+  const scale = 0.38;
   
   for (let i = 0; i < count; i++) {
-    // 使用极坐标心形方程: r = 1 - sin(θ)
-    // 但我们用更好看的参数方程
-    const t = (i / count) * Math.PI * 5;
+    // 随机角度
+    const t = Math.random() * Math.PI * 2;
     
-    // 心形参数方程
+    // 经典心形参数方程
     const x = 16 * Math.pow(Math.sin(t), 3);
     const y = 13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t);
     
-    // 填充内部：使用随机缩放因子
-    const fillFactor = Math.sqrt(Math.random()); // sqrt 让分布更均匀
+    // 随机填充因子，让点分布在心形内部
+    const fill = Math.pow(Math.random(), 0.5); // sqrt 让边缘更密
     
-    positions[i * 3] = x * fillFactor * 0.35;
-    positions[i * 3 + 1] = y * fillFactor * 0.35;
-    positions[i * 3 + 2] = (Math.random() - 0.5) * 0.5; // 很薄的 z 层
+    // 添加随机偏移避免中心线
+    const offsetX = (Math.random() - 0.5) * 0.8;
+    const offsetY = (Math.random() - 0.5) * 0.8;
+    
+    positions[i * 3] = (x * fill + offsetX) * scale;
+    positions[i * 3 + 1] = (y * fill + offsetY) * scale;
+    positions[i * 3 + 2] = (Math.random() - 0.5) * 0.5;
   }
   
   return positions;
@@ -47,7 +55,160 @@ const generateScatteredPositions = (count: number): Float32Array => {
   return positions;
 };
 
-export const HeartParticles = ({ visible, color = '#FF1493', count = 1500 }: HeartParticlesProps) => {
+// 单张照片组件
+const PhotoPlane = ({ 
+  photoUrl, 
+  offsetX, 
+  opacity, 
+  scale 
+}: { 
+  photoUrl: string; 
+  offsetX: number; 
+  opacity: number;
+  scale: number;
+}) => {
+  const texture = useLoader(THREE.TextureLoader, photoUrl);
+  
+  if (!texture) return null;
+  
+  return (
+    <mesh position={[offsetX, 0, 0.5]} scale={scale}>
+      <planeGeometry args={[4, 5]} />
+      <meshBasicMaterial 
+        map={texture} 
+        transparent 
+        opacity={opacity}
+        side={THREE.DoubleSide}
+        depthWrite={false}
+      />
+    </mesh>
+  );
+};
+
+// 照片轮播组件 - 支持滑动切换
+const PhotoCarousel = ({ 
+  photos, 
+  visible, 
+  progress,
+  interval = 3000
+}: { 
+  photos: string[]; 
+  visible: boolean; 
+  progress: number;
+  interval?: number;
+}) => {
+  const groupRef = useRef<THREE.Group>(null);
+  const currentIndexRef = useRef(0);
+  const [displayIndex, setDisplayIndex] = useState(0);
+  const [slideProgress, setSlideProgress] = useState(0);
+  const [isSliding, setIsSliding] = useState(false);
+  const slideStartRef = useRef(0);
+  const lastSwitchTimeRef = useRef(0);
+  const wasVisibleRef = useRef(false);
+  const hasStartedRef = useRef(false); // 是否已经开始计时
+  
+  // visible 变化时重置状态
+  useEffect(() => {
+    if (visible && !wasVisibleRef.current) {
+      // 刚变为可见，重置
+      currentIndexRef.current = 0;
+      setDisplayIndex(0);
+      setSlideProgress(0);
+      setIsSliding(false);
+      hasStartedRef.current = false; // 等待粒子聚合完成
+      lastSwitchTimeRef.current = 0;
+    }
+    wasVisibleRef.current = visible;
+  }, [visible]);
+  
+  // 使用 useFrame 来控制定时切换
+  useFrame(() => {
+    if (!visible || photos.length <= 1) return;
+    
+    const now = Date.now();
+    
+    // 等待爱心粒子聚合完成（progress > 0.8）再开始计时
+    if (!hasStartedRef.current && progress > 0.8) {
+      hasStartedRef.current = true;
+      lastSwitchTimeRef.current = now;
+    }
+    
+    // 还没开始计时，不切换
+    if (!hasStartedRef.current) return;
+    
+    if (isSliding) {
+      // 正在滑动中
+      const elapsed = now - slideStartRef.current;
+      const slideDuration = 600;
+      const newProgress = Math.min(1, elapsed / slideDuration);
+      const eased = 1 - Math.pow(1 - newProgress, 3);
+      setSlideProgress(eased);
+      
+      if (newProgress >= 1) {
+        // 滑动完成
+        setIsSliding(false);
+        setSlideProgress(0);
+        currentIndexRef.current = (currentIndexRef.current + 1) % photos.length;
+        setDisplayIndex(currentIndexRef.current);
+        lastSwitchTimeRef.current = now;
+      }
+    } else {
+      // 检查是否该切换了
+      if (now - lastSwitchTimeRef.current >= interval) {
+        setIsSliding(true);
+        slideStartRef.current = now;
+      }
+    }
+  });
+  
+  if (!visible || photos.length === 0) return null;
+  
+  const baseScale = progress * 0.8;
+  const baseOpacity = progress * 0.95;
+  const slideOffset = slideProgress * 6;
+  
+  const nextIndex = (displayIndex + 1) % photos.length;
+  
+  return (
+    <group ref={groupRef}>
+      <PhotoPlane
+        photoUrl={photos[displayIndex]}
+        offsetX={-slideOffset}
+        opacity={baseOpacity * (1 - slideProgress * 0.5)}
+        scale={baseScale}
+      />
+      {isSliding && photos.length > 1 && (
+        <PhotoPlane
+          photoUrl={photos[nextIndex]}
+          offsetX={6 - slideOffset}
+          opacity={baseOpacity * slideProgress}
+          scale={baseScale}
+        />
+      )}
+    </group>
+  );
+};
+
+// 兼容旧版单张照片
+const CenterPhotoPlane = ({ photoUrl, visible, progress }: { photoUrl: string; visible: boolean; progress: number }) => {
+  return (
+    <PhotoCarousel 
+      photos={[photoUrl]} 
+      visible={visible} 
+      progress={progress}
+    />
+  );
+};
+
+export const HeartParticles = ({ 
+  visible, 
+  color = '#FF1493', 
+  count = 1500, 
+  size = 1, 
+  centerPhoto,
+  centerPhotos,
+  photoInterval = 3000
+}: HeartParticlesProps) => {
   const groupRef = useRef<THREE.Group>(null);
   const pointsRef = useRef<THREE.Points>(null);
   const materialRef = useRef<THREE.PointsMaterial>(null);
@@ -125,7 +286,7 @@ export const HeartParticles = ({ visible, color = '#FF1493', count = 1500 }: Hea
         <pointsMaterial
           ref={materialRef}
           color={color}
-          size={0.25}
+          size={0.25 * size}
           transparent
           opacity={0}
           sizeAttenuation
@@ -133,6 +294,21 @@ export const HeartParticles = ({ visible, color = '#FF1493', count = 1500 }: Hea
           blending={THREE.AdditiveBlending}
         />
       </points>
+      {/* 中心照片轮播 */}
+      {(centerPhotos && centerPhotos.length > 0) ? (
+        <PhotoCarousel 
+          photos={centerPhotos} 
+          visible={visible} 
+          progress={progressRef.current}
+          interval={photoInterval}
+        />
+      ) : centerPhoto ? (
+        <CenterPhotoPlane 
+          photoUrl={centerPhoto} 
+          visible={visible} 
+          progress={progressRef.current} 
+        />
+      ) : null}
     </group>
   );
 };

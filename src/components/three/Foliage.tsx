@@ -46,14 +46,24 @@ const easingFunctions = {
 };
 
 // 创建带有指定缓动函数的 Shader Material
-// uProgress: 0-1 表示聚合进度，uDirection: 1=聚合中, -1=散开中
-// aGatherDelay: 每个粒子的聚合延迟（用于实现搭积木等效果）
+// uProgress: 0-1 表示聚合进度
+// uSize: 粒子大小倍数
+// uGlow: 发光强度
+// uColor: 聚合后颜色
+// uChaosColor: 散开时颜色
 const createFoliageMaterial = (easing: AnimationEasing) => {
   const easingCode = easingFunctions[easing] || easingFunctions.easeInOut;
   
   return shaderMaterial(
-    { uTime: 0, uColor: new THREE.Color(CONFIG.colors.emerald), uProgress: 0 },
-    `uniform float uTime; uniform float uProgress;
+    { 
+      uTime: 0, 
+      uColor: new THREE.Color(CONFIG.colors.emerald), 
+      uChaosColor: new THREE.Color(CONFIG.colors.emerald).multiplyScalar(0.3),
+      uProgress: 0,
+      uSize: 1.0,
+      uGlow: 1.0
+    },
+    `uniform float uTime; uniform float uProgress; uniform float uSize;
     attribute vec3 aTargetPos; attribute float aRandom; attribute float aGatherDelay;
     varying vec2 vUv; varying float vMix;
     ${easingCode}
@@ -61,25 +71,27 @@ const createFoliageMaterial = (easing: AnimationEasing) => {
       vUv = uv;
       vec3 noise = vec3(sin(uTime * 1.5 + position.x), cos(uTime + position.y), sin(uTime * 1.5 + position.z)) * 0.15;
       
-      // 统一使用基于延迟的进度计算，确保打断时位置连续
+      // 基于延迟的进度计算：delay 越大，开始动画越晚
       float adjustedT;
       if (aGatherDelay < 0.001) {
         adjustedT = uProgress;
       } else {
-        adjustedT = clamp((uProgress - aGatherDelay * 0.5) / (1.0 - aGatherDelay * 0.5 + 0.001), 0.0, 1.0);
+        adjustedT = clamp((uProgress - aGatherDelay) / (1.0 - aGatherDelay + 0.001), 0.0, 1.0);
       }
       float t = ease(adjustedT);
       
       vec3 finalPos = mix(position, aTargetPos + noise, t);
       vec4 mvPosition = modelViewMatrix * vec4(finalPos, 1.0);
-      gl_PointSize = (60.0 * (1.0 + aRandom)) / -mvPosition.z;
+      gl_PointSize = (60.0 * uSize * (1.0 + aRandom)) / -mvPosition.z;
       gl_Position = projectionMatrix * mvPosition;
       vMix = t;
     }`,
-    `uniform vec3 uColor; varying float vMix;
+    `uniform vec3 uColor; uniform vec3 uChaosColor; uniform float uGlow; varying float vMix;
     void main() {
       float r = distance(gl_PointCoord, vec2(0.5)); if (r > 0.5) discard;
-      vec3 finalColor = mix(uColor * 0.3, uColor * 1.2, vMix);
+      vec3 chaosCol = uChaosColor;
+      vec3 formedCol = uColor * uGlow;
+      vec3 finalColor = mix(chaosCol, formedCol, vMix);
       gl_FragColor = vec4(finalColor, 1.0);
     }`
   );
@@ -104,6 +116,11 @@ extend({
 
 interface FoliageProps {
   state: SceneState;
+  count?: number;
+  color?: string;
+  chaosColor?: string;
+  size?: number;
+  glow?: number;
   easing?: AnimationEasing;
   speed?: number;
   scatterShape?: ScatterShape;
@@ -196,10 +213,28 @@ const generateScatterPositions = (count: number, shape: ScatterShape): Float32Ar
   return positions;
 };
 
-export const Foliage = ({ state, easing = 'easeInOut', speed = 1, scatterShape = 'sphere', gatherShape = 'direct' }: FoliageProps) => {
+export const Foliage = ({ 
+  state, 
+  count: propCount,
+  color = CONFIG.colors.emerald,
+  chaosColor,
+  size = 1,
+  glow = 1,
+  easing = 'easeInOut', 
+  speed = 1, 
+  scatterShape = 'sphere', 
+  gatherShape = 'direct' 
+}: FoliageProps) => {
   const materialRef = useRef<any>(null);
   const geometryRef = useRef<THREE.BufferGeometry>(null);
-  const count = CONFIG.counts.foliage;
+  const count = propCount || CONFIG.counts.foliage;
+  
+  // 计算颜色
+  const formedColor = useMemo(() => new THREE.Color(color), [color]);
+  const scatterColor = useMemo(() => {
+    if (chaosColor) return new THREE.Color(chaosColor);
+    return new THREE.Color(color).multiplyScalar(0.3);
+  }, [color, chaosColor]);
   
   // 存储当前和目标 chaos 位置（用于平滑过渡）
   const currentChaosRef = useRef<Float32Array | null>(null);
@@ -223,26 +258,39 @@ export const Foliage = ({ state, easing = 'easeInOut', speed = 1, scatterShape =
       targetPositions[i * 3 + 2] = tz;
       randoms[i] = seededRandom(i * 5 + 102);
       
-      // 根据聚合形状计算延迟
-      const normalizedY = (ty + CONFIG.tree.height / 2) / CONFIG.tree.height;
+      // 根据聚合形状计算延迟（0-1范围，值越大越晚开始动画）
+      const normalizedY = (ty + CONFIG.tree.height / 2) / CONFIG.tree.height; // 0=底部, 1=顶部
       switch (gatherShape) {
         case 'stack':
-          gatherDelays[i] = normalizedY * 0.7;
+          // 搭积木：从底部开始，底部先到位，顶部最后
+          gatherDelays[i] = normalizedY * 0.85;
           break;
-        case 'spiralIn':
-          const angle = Math.atan2(tz, tx);
-          gatherDelays[i] = ((angle + Math.PI) / (2 * Math.PI) + normalizedY * 0.5) * 0.5;
+        case 'spiralIn': {
+          // 螺旋聚合：像盘山公路一样，粒子沿着螺旋路径排队进入
+          // 参考红色螺旋带子的路径：5圈螺旋
+          const spiralTurns = 5;
+          const angle = Math.atan2(tz, tx); // -PI 到 PI
+          const normalizedAngle = (angle + Math.PI) / (2 * Math.PI); // 0-1
+          // 计算粒子在螺旋路径上的位置（0-1）
+          // 就像盘山公路，高度决定在第几圈，角度决定在这一圈的哪个位置
+          const currentTurn = normalizedY * spiralTurns; // 当前在第几圈（0-5）
+          const positionOnSpiral = (currentTurn + normalizedAngle) / (spiralTurns + 1);
+          gatherDelays[i] = Math.min(0.9, positionOnSpiral * 0.95);
           break;
+        }
         case 'implode':
+          // 向心收缩：外围先动，中心最后
           const dist = Math.sqrt(tx * tx + tz * tz) / CONFIG.tree.radius;
-          gatherDelays[i] = (1 - dist) * 0.5;
+          gatherDelays[i] = (1 - Math.min(1, dist)) * 0.8;
           break;
         case 'waterfall':
-          gatherDelays[i] = (1 - normalizedY) * 0.7;
+          // 瀑布：从顶部开始落下，顶部先到位
+          gatherDelays[i] = (1 - normalizedY) * 0.85;
           break;
         case 'wave':
+          // 波浪：从左到右扫过
           const normalizedX = (tx + CONFIG.tree.radius) / (2 * CONFIG.tree.radius);
-          gatherDelays[i] = normalizedX * 0.6;
+          gatherDelays[i] = normalizedX * 0.85;
           break;
         case 'direct':
         default:
@@ -287,6 +335,11 @@ export const Foliage = ({ state, easing = 'easeInOut', speed = 1, scatterShape =
   useFrame((rootState, delta) => {
     if (materialRef.current) {
       materialRef.current.uTime = rootState.clock.elapsedTime;
+      materialRef.current.uSize = size;
+      materialRef.current.uGlow = glow;
+      materialRef.current.uColor = formedColor;
+      materialRef.current.uChaosColor = scatterColor;
+      
       const targetProgress = state === 'FORMED' ? 1 : 0;
       const currentProgress = materialRef.current.uProgress;
       

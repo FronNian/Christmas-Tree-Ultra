@@ -34,6 +34,9 @@ interface ExperienceProps {
   hideTree?: boolean;
   heartCount?: number;
   textCount?: number;
+  heartCenterPhoto?: string; // 爱心特效中心显示的照片（单张）
+  heartCenterPhotos?: string[]; // 爱心特效中心轮播的照片（多张）
+  heartPhotoInterval?: number; // 照片轮播间隔（毫秒）
 }
 
 export const Experience = ({
@@ -47,7 +50,10 @@ export const Experience = ({
   showText,
   customMessage,
   hideTree = false,
-  heartCount = 1500
+  heartCount = 1500,
+  heartCenterPhoto,
+  heartCenterPhotos,
+  heartPhotoInterval = 3000
 }: ExperienceProps) => {
   const controlsRef = useRef<any>(null);
   const isPhotoSelected = selectedPhotoIndex !== null;
@@ -56,7 +62,7 @@ export const Experience = ({
   // 确保 config 有新字段的默认值
   const safeConfig = {
     ...config,
-    foliage: config.foliage || { enabled: true, count: 15000 },
+    foliage: config.foliage || { enabled: true, count: 15000, color: '#00FF88', size: 1, glow: 1 },
     lights: config.lights || { enabled: true, count: 400 },
     elements: config.elements || { enabled: true, count: 500 },
     snow: config.snow || { enabled: true, count: 2000, speed: 2, size: 0.5, opacity: 0.8 },
@@ -97,9 +103,17 @@ export const Experience = ({
         touches={{ ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN }}
       />
 
-      <color attach="background" args={['#000300']} />
+      <color attach="background" args={[config.background?.color || '#000300']} />
       {safeConfig.stars.enabled && (
-        <Stars radius={100} depth={50} count={mobile ? 2000 : 5000} factor={4} saturation={0} fade speed={1} />
+        <Stars 
+          radius={100} 
+          depth={50} 
+          count={safeConfig.stars.count || (mobile ? 2000 : 5000)} 
+          factor={safeConfig.stars.brightness || 4} 
+          saturation={0} 
+          fade 
+          speed={1} 
+        />
       )}
 
       <ambientLight intensity={0.4} color="#003311" />
@@ -108,7 +122,9 @@ export const Experience = ({
       <pointLight position={[0, -20, 10]} intensity={30} color="#ffffff" />
 
       {safeConfig.snow.enabled && <Snowfall config={safeConfig.snow} />}
-      {safeConfig.ribbons.enabled && <FallingRibbons count={safeConfig.ribbons.count} />}
+      {safeConfig.ribbons.enabled && (
+        <FallingRibbons count={safeConfig.ribbons.count} colors={config.ribbons?.colors} />
+      )}
 
       {/* 圣诞树主体 - 特效时隐藏 */}
       {!hideTree && (
@@ -116,6 +132,11 @@ export const Experience = ({
           {safeConfig.foliage.enabled && (
             <Foliage 
               state={sceneState} 
+              count={safeConfig.foliage.count}
+              color={safeConfig.foliage.color}
+              chaosColor={safeConfig.foliage.chaosColor}
+              size={safeConfig.foliage.size}
+              glow={safeConfig.foliage.glow}
               easing={config.animation?.easing}
               speed={config.animation?.speed}
               scatterShape={config.animation?.scatterShape}
@@ -162,31 +183,52 @@ export const Experience = ({
               <GiftPile 
                 state={sceneState} 
                 count={safeConfig.giftPile.count}
+                colors={config.giftPile?.colors}
                 easing={config.animation?.easing}
                 speed={config.animation?.speed}
                 scatterShape={config.animation?.scatterShape}
                 gatherShape={config.animation?.gatherShape}
               />
             )}
-            <SpiralRibbon 
-              state={sceneState} 
-              color="#FF2222" 
-              glowColor="#FF4444"
-              easing={config.animation?.easing}
-              speed={config.animation?.speed}
-            />
+            {(config.spiralRibbon?.enabled !== false) && (
+              <SpiralRibbon 
+                state={sceneState} 
+                color={config.spiralRibbon?.color || "#FF2222"}
+                glowColor={config.spiralRibbon?.glowColor || "#FF4444"}
+                width={config.spiralRibbon?.width || 0.8}
+                turns={config.spiralRibbon?.turns || 5}
+                double={config.spiralRibbon?.double || false}
+                easing={config.animation?.easing}
+                speed={config.animation?.speed}
+              />
+            )}
             <TopStar state={sceneState} avatarUrl={config.topStar?.avatarUrl} />
           </Suspense>
           {safeConfig.sparkles.enabled && (
             <Sparkles count={safeConfig.sparkles.count} scale={50} size={8} speed={0.4} opacity={0.4} color={CONFIG.colors.silver} />
           )}
-          {safeConfig.fog.enabled && <GroundFog opacity={safeConfig.fog.opacity} />}
+          {safeConfig.fog.enabled && (
+            <GroundFog opacity={safeConfig.fog.opacity} color={config.fog?.color} />
+          )}
         </group>
       )}
 
       {/* 特效粒子 */}
-      <HeartParticles visible={showHeart || false} color="#FF1493" count={mobile ? Math.min(heartCount, 1000) : heartCount} />
-      <TextParticles text={customMessage || 'MERRY CHRISTMAS'} visible={showText || false} color="#FFD700" />
+      <HeartParticles 
+        visible={showHeart || false} 
+        color={config.heartEffect?.color || "#FF1493"} 
+        count={mobile ? Math.min(heartCount, 1000) : heartCount}
+        size={config.heartEffect?.size}
+        centerPhoto={heartCenterPhoto}
+        centerPhotos={heartCenterPhotos}
+        photoInterval={heartPhotoInterval}
+      />
+      <TextParticles 
+        text={customMessage || 'MERRY CHRISTMAS'} 
+        visible={showText || false} 
+        color={config.textEffect?.color || "#FFD700"}
+        size={config.textEffect?.size}
+      />
 
       {safeConfig.bloom.enabled && (
         <EffectComposer multisampling={0}>

@@ -15,33 +15,32 @@ export const IntroOverlay = ({
   onComplete,
   enabled = true
 }: IntroOverlayProps) => {
-  const [visible, setVisible] = useState(enabled);
-  const [phase, setPhase] = useState<'enter' | 'show' | 'exit'>('enter');
+  // 初始状态：如果 enabled 为 true，直接进入 show 状态（跳过入场动画避免 opacity 问题）
+  const [phase, setPhase] = useState<'hidden' | 'show' | 'exit'>(enabled ? 'show' : 'hidden');
 
   useEffect(() => {
     if (!enabled) {
-      setVisible(false);
+      setPhase('hidden');
       return;
     }
 
-    setVisible(true);
-    setPhase('enter');
+    // enabled 变为 true 时，直接显示
+    setPhase('show');
 
-    const enterTimer = setTimeout(() => setPhase('show'), 800);
-    const showTimer = setTimeout(() => setPhase('exit'), duration - 800);
-    const exitTimer = setTimeout(() => {
-      setVisible(false);
+    // duration 后开始退出
+    const exitTimer = setTimeout(() => setPhase('exit'), duration - 800);
+    const hideTimer = setTimeout(() => {
+      setPhase('hidden');
       onComplete?.();
     }, duration);
 
     return () => {
-      clearTimeout(enterTimer);
-      clearTimeout(showTimer);
       clearTimeout(exitTimer);
+      clearTimeout(hideTimer);
     };
   }, [enabled, duration, onComplete]);
 
-  if (!visible) return null;
+  if (phase === 'hidden' || !text) return null;
 
   return (
     <div
@@ -74,7 +73,7 @@ export const IntroOverlay = ({
       onClick={() => {
         setPhase('exit');
         setTimeout(() => {
-          setVisible(false);
+          setPhase('hidden');
           onComplete?.();
         }, 800);
       }}
@@ -110,8 +109,8 @@ export const IntroOverlay = ({
             maxWidth: '100%',
             width: '100%',
             textShadow: '0 0 20px rgba(255, 215, 0, 0.5), 0 0 40px rgba(255, 215, 0, 0.3)',
-            opacity: phase === 'enter' ? 0 : phase === 'exit' ? 0 : 1,
-            transform: phase === 'enter' ? 'translateY(30px)' : phase === 'exit' ? 'translateY(-30px) scale(1.1)' : 'translateY(0)',
+            opacity: phase === 'exit' ? 0 : 1,
+            transform: phase === 'exit' ? 'translateY(-30px) scale(1.1)' : 'translateY(0)',
             transition: 'all 0.8s cubic-bezier(0.4, 0, 0.2, 1)',
             animation: phase === 'show' ? 'introTextGlow 2s ease-in-out infinite' : 'none',
           }}
@@ -134,8 +133,8 @@ export const IntroOverlay = ({
               hyphens: 'auto',
               maxWidth: '100%',
               width: '100%',
-              opacity: phase === 'enter' ? 0 : phase === 'exit' ? 0 : 1,
-              transform: phase === 'enter' ? 'translateY(20px)' : 'translateY(0)',
+              opacity: phase === 'exit' ? 0 : 1,
+              transform: 'translateY(0)',
               transition: 'all 0.8s cubic-bezier(0.4, 0, 0.2, 1) 0.2s',
             }}
           >

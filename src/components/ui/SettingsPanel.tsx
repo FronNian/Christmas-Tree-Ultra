@@ -1,12 +1,62 @@
-import React from 'react';
+import React, { useState } from 'react';
 import type { SceneConfig, GestureConfig, GestureAction, MusicConfig, AnimationEasing, ScatterShape, GatherShape, DecorationColors } from '../../types';
 import { PRESET_MUSIC } from '../../types';
 import { isMobile } from '../../utils/helpers';
 import { TITLE_FONTS } from './TitleOverlay';
+import { TimelineEditor } from './TimelineEditor';
 import { 
   TreePine, Sparkles, Heart, Type, X, Settings,
-  TreeDeciduous, Lightbulb, Gift, Ribbon, Snowflake, CloudFog, Star, Rainbow, Bot, Hand, Music, Upload, Zap, Palette
+  TreeDeciduous, Lightbulb, Gift, Ribbon, Snowflake, CloudFog, Star, Rainbow, Bot, Hand, Music, Upload, Zap, Palette,
+  ChevronDown, ChevronRight, Film
 } from 'lucide-react';
+
+// 可折叠分组组件
+interface CollapsibleSectionProps {
+  title: string;
+  icon: React.ReactNode;
+  children: React.ReactNode;
+  defaultOpen?: boolean;
+}
+
+const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({ title, icon, children, defaultOpen = false }) => {
+  const [isOpen, setIsOpen] = useState(defaultOpen);
+  
+  return (
+    <div style={{
+      marginBottom: '12px',
+      borderBottom: '1px solid rgba(255,255,255,0.1)',
+      paddingBottom: isOpen ? '12px' : '0'
+    }}>
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        style={{
+          width: '100%',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          background: 'none',
+          border: 'none',
+          padding: '8px 0',
+          cursor: 'pointer',
+          color: '#FFD700',
+          fontSize: '13px',
+          fontWeight: 'bold'
+        }}
+      >
+        <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          {icon}
+          {title}
+        </span>
+        {isOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+      </button>
+      {isOpen && (
+        <div style={{ paddingTop: '8px' }}>
+          {children}
+        </div>
+      )}
+    </div>
+  );
+};
 
 // 默认装饰颜色
 const DEFAULT_DECORATION_COLORS: DecorationColors = {
@@ -85,9 +135,15 @@ interface SettingsPanelProps {
   aiEnabled: boolean;
   onAiToggle: (enabled: boolean) => void;
   onAvatarUpload?: (imageUrl: string) => void;  // 头像上传回调
+  photoCount?: number;  // 照片数量（用于时间轴编辑器）
+  onTimelinePreview?: () => void;  // 时间轴预览回调
+  isTimelinePlaying?: boolean;  // 时间轴是否正在播放
 }
 
-export const SettingsPanel = ({ config, onChange, onClose, aiEnabled, onAiToggle, onAvatarUpload }: SettingsPanelProps) => {
+export const SettingsPanel = ({ 
+  config, onChange, onClose, aiEnabled, onAiToggle, onAvatarUpload,
+  photoCount = 0, onTimelinePreview, isTimelinePlaying = false
+}: SettingsPanelProps) => {
   const mobile = isMobile();
 
   const defaultGestures: GestureConfig = {
@@ -140,12 +196,6 @@ export const SettingsPanel = ({ config, onChange, onClose, aiEnabled, onAiToggle
     overflowWrap: 'break-word'
   };
 
-  const sectionStyle: React.CSSProperties = {
-    marginBottom: '16px',
-    paddingBottom: '12px',
-    borderBottom: '1px solid rgba(255,255,255,0.1)'
-  };
-
   const labelStyle: React.CSSProperties = {
     display: 'flex',
     justifyContent: 'space-between',
@@ -160,13 +210,6 @@ export const SettingsPanel = ({ config, onChange, onClose, aiEnabled, onAiToggle
     accentColor: '#FFD700',
     cursor: 'pointer',
     boxSizing: 'border-box'
-  };
-
-  const titleStyle: React.CSSProperties = {
-    fontSize: '13px',
-    fontWeight: 'bold',
-    color: '#FFD700',
-    marginBottom: '10px'
   };
 
   const inputStyle: React.CSSProperties = {
@@ -190,8 +233,7 @@ export const SettingsPanel = ({ config, onChange, onClose, aiEnabled, onAiToggle
       </div>
 
       {/* 标题文字 */}
-      <div style={sectionStyle}>
-        <div style={{ ...titleStyle, display: 'flex', alignItems: 'center', gap: '6px' }}><TreePine size={14} /> 顶部标题</div>
+      <CollapsibleSection title="顶部标题" icon={<TreePine size={14} />} defaultOpen={true}>
         <div style={labelStyle}>
           <span>显示标题</span>
           <input type="checkbox" checked={safeConfig.title.enabled} onChange={e => onChange({ ...config, title: { ...safeConfig.title, enabled: e.target.checked } })} style={{ accentColor: '#FFD700' }} />
@@ -246,11 +288,32 @@ export const SettingsPanel = ({ config, onChange, onClose, aiEnabled, onAiToggle
         
         <div style={{ ...labelStyle, marginTop: '10px' }}><span>字体大小: {safeConfig.title.size || 48}px</span></div>
         <input type="range" min="24" max="200" step="4" value={safeConfig.title.size || 48} onChange={e => onChange({ ...config, title: { ...safeConfig.title, size: Number(e.target.value) } })} style={sliderStyle} />
-      </div>
+        
+        {/* 标题颜色 */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '10px' }}>
+          <div>
+            <span style={{ fontSize: '10px', color: '#888' }}>文字颜色</span>
+            <input
+              type="color"
+              value={config.title?.color || '#FFD700'}
+              onChange={e => onChange({ ...config, title: { ...safeConfig.title, color: e.target.value } })}
+              style={{ width: '100%', height: '28px', cursor: 'pointer', border: 'none', borderRadius: '4px' }}
+            />
+          </div>
+          <div>
+            <span style={{ fontSize: '10px', color: '#888' }}>发光颜色</span>
+            <input
+              type="color"
+              value={config.title?.shadowColor || config.title?.color || '#FFD700'}
+              onChange={e => onChange({ ...config, title: { ...safeConfig.title, shadowColor: e.target.value } })}
+              style={{ width: '100%', height: '28px', cursor: 'pointer', border: 'none', borderRadius: '4px' }}
+            />
+          </div>
+        </div>
+      </CollapsibleSection>
 
       {/* 开场文案 */}
-      <div style={sectionStyle}>
-        <div style={{ ...titleStyle, display: 'flex', alignItems: 'center', gap: '6px' }}><Type size={14} /> 开场文案</div>
+      <CollapsibleSection title="开场文案" icon={<Type size={14} />}>
         <p style={{ fontSize: '10px', color: '#888', margin: '0 0 8px 0' }}>
           分享链接打开时显示的开场白
         </p>
@@ -291,20 +354,108 @@ export const SettingsPanel = ({ config, onChange, onClose, aiEnabled, onAiToggle
             />
           </>
         )}
-      </div>
+        
+        {/* 时间轴模式提示 */}
+        {config.timeline?.enabled && (
+          <p style={{ fontSize: '10px', color: '#FF9800', margin: '8px 0 0 0', padding: '6px', background: 'rgba(255,152,0,0.1)', borderRadius: '4px' }}>
+            ⚠️ 已启用故事线模式，此配置将被忽略
+          </p>
+        )}
+      </CollapsibleSection>
+
+      {/* 故事线模式 */}
+      <CollapsibleSection title="故事线模式" icon={<Film size={14} />}>
+        <TimelineEditor
+          config={config.timeline}
+          onChange={(timeline) => onChange({ ...config, timeline })}
+          photoCount={photoCount}
+          configuredTexts={config.gestureTexts || (config.gestureText ? [config.gestureText] : [])}
+          onPreview={onTimelinePreview}
+          isPlaying={isTimelinePlaying}
+        />
+      </CollapsibleSection>
 
       {/* 树叶 */}
-      <div style={sectionStyle}>
-        <div style={{ ...titleStyle, display: 'flex', alignItems: 'center', gap: '6px' }}><TreeDeciduous size={14} /> 树叶粒子</div>
+      <CollapsibleSection title="树叶粒子" icon={<TreeDeciduous size={14} />}>
         <div style={labelStyle}>
           <span>显示树叶</span>
           <input type="checkbox" checked={config.foliage.enabled} onChange={e => onChange({ ...config, foliage: { ...config.foliage, enabled: e.target.checked } })} style={{ accentColor: '#FFD700' }} />
         </div>
-      </div>
+        
+        {config.foliage.enabled && (
+          <>
+            {/* 粒子数量 */}
+            <div style={{ ...labelStyle, marginTop: '8px' }}>
+              <span>粒子数量: {config.foliage.count || 15000}</span>
+            </div>
+            <input
+              type="range"
+              min="5000"
+              max="25000"
+              step="1000"
+              value={config.foliage.count || 15000}
+              onChange={e => onChange({ ...config, foliage: { ...config.foliage, count: Number(e.target.value) } })}
+              style={sliderStyle}
+            />
+            <p style={{ fontSize: '9px', color: '#666', margin: '2px 0 0 0' }}>
+              数量越多越密集，但会影响性能
+            </p>
+            
+            {/* 颜色设置 */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '10px' }}>
+              <div>
+                <span style={{ fontSize: '10px', color: '#888' }}>聚合颜色</span>
+                <input
+                  type="color"
+                  value={config.foliage.color || '#00FF88'}
+                  onChange={e => onChange({ ...config, foliage: { ...config.foliage, color: e.target.value } })}
+                  style={{ width: '100%', height: '28px', cursor: 'pointer', border: 'none', borderRadius: '4px' }}
+                />
+              </div>
+              <div>
+                <span style={{ fontSize: '10px', color: '#888' }}>散开颜色</span>
+                <input
+                  type="color"
+                  value={config.foliage.chaosColor || '#004422'}
+                  onChange={e => onChange({ ...config, foliage: { ...config.foliage, chaosColor: e.target.value } })}
+                  style={{ width: '100%', height: '28px', cursor: 'pointer', border: 'none', borderRadius: '4px' }}
+                />
+              </div>
+            </div>
+            
+            {/* 粒子大小 */}
+            <div style={{ ...labelStyle, marginTop: '10px' }}>
+              <span>粒子大小: {(config.foliage.size || 1).toFixed(1)}x</span>
+            </div>
+            <input
+              type="range"
+              min="0.5"
+              max="2"
+              step="0.1"
+              value={config.foliage.size || 1}
+              onChange={e => onChange({ ...config, foliage: { ...config.foliage, size: Number(e.target.value) } })}
+              style={sliderStyle}
+            />
+            
+            {/* 发光强度 */}
+            <div style={{ ...labelStyle, marginTop: '8px' }}>
+              <span>发光强度: {(config.foliage.glow || 1).toFixed(1)}x</span>
+            </div>
+            <input
+              type="range"
+              min="0.5"
+              max="2"
+              step="0.1"
+              value={config.foliage.glow || 1}
+              onChange={e => onChange({ ...config, foliage: { ...config.foliage, glow: Number(e.target.value) } })}
+              style={sliderStyle}
+            />
+          </>
+        )}
+      </CollapsibleSection>
 
       {/* 聚合/散开动画 */}
-      <div style={sectionStyle}>
-        <div style={{ ...titleStyle, display: 'flex', alignItems: 'center', gap: '6px' }}><Zap size={14} /> 动画效果</div>
+      <CollapsibleSection title="动画效果" icon={<Zap size={14} />}>
         <p style={{ fontSize: '10px', color: '#888', margin: '0 0 10px 0' }}>
           控制聚合和散开时的动画效果
         </p>
@@ -438,11 +589,10 @@ export const SettingsPanel = ({ config, onChange, onClose, aiEnabled, onAiToggle
         <p style={{ fontSize: '9px', color: '#666', margin: '4px 0 0 0' }}>
           粒子聚合时的动画效果
         </p>
-      </div>
+      </CollapsibleSection>
 
       {/* 彩灯 */}
-      <div style={sectionStyle}>
-        <div style={{ ...titleStyle, display: 'flex', alignItems: 'center', gap: '6px' }}><Lightbulb size={14} /> 彩灯</div>
+      <CollapsibleSection title="彩灯" icon={<Lightbulb size={14} />}>
         <div style={labelStyle}>
           <span>显示彩灯</span>
           <input type="checkbox" checked={config.lights.enabled} onChange={e => onChange({ ...config, lights: { ...config.lights, enabled: e.target.checked } })} style={{ accentColor: '#FFD700' }} />
@@ -516,11 +666,10 @@ export const SettingsPanel = ({ config, onChange, onClose, aiEnabled, onAiToggle
             ))}
           </div>
         </div>
-      </div>
+      </CollapsibleSection>
 
       {/* 圣诞元素 */}
-      <div style={sectionStyle}>
-        <div style={{ ...titleStyle, display: 'flex', alignItems: 'center', gap: '6px' }}><Gift size={14} /> 圣诞装饰</div>
+      <CollapsibleSection title="圣诞装饰" icon={<Gift size={14} />}>
         <div style={labelStyle}>
           <span>显示装饰</span>
           <input type="checkbox" checked={config.elements.enabled} onChange={e => onChange({ ...config, elements: { ...config.elements, enabled: e.target.checked } })} style={{ accentColor: '#FFD700' }} />
@@ -856,33 +1005,195 @@ export const SettingsPanel = ({ config, onChange, onClose, aiEnabled, onAiToggle
             }} />
           </div>
         </div>
-      </div>
+      </CollapsibleSection>
+
+      {/* 螺旋带子 */}
+      <CollapsibleSection title="螺旋带子" icon={<Ribbon size={14} />}>
+        <div style={labelStyle}>
+          <span>显示螺旋带子</span>
+          <input 
+            type="checkbox" 
+            checked={config.spiralRibbon?.enabled !== false} 
+            onChange={e => onChange({ 
+              ...config, 
+              spiralRibbon: { 
+                ...config.spiralRibbon,
+                enabled: e.target.checked,
+                color: config.spiralRibbon?.color || '#FF2222',
+                glowColor: config.spiralRibbon?.glowColor || '#FF4444',
+                width: config.spiralRibbon?.width || 0.8,
+                turns: config.spiralRibbon?.turns || 5,
+                double: config.spiralRibbon?.double || false
+              } 
+            })} 
+            style={{ accentColor: '#FFD700' }} 
+          />
+        </div>
+        
+        {config.spiralRibbon?.enabled !== false && (
+          <>
+            {/* 颜色设置 */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '8px' }}>
+              <div>
+                <span style={{ fontSize: '10px', color: '#888' }}>带子颜色</span>
+                <input
+                  type="color"
+                  value={config.spiralRibbon?.color || '#FF2222'}
+                  onChange={e => onChange({
+                    ...config,
+                    spiralRibbon: { ...config.spiralRibbon!, color: e.target.value }
+                  })}
+                  style={{ width: '100%', height: '28px', cursor: 'pointer', border: 'none', borderRadius: '4px' }}
+                />
+              </div>
+              <div>
+                <span style={{ fontSize: '10px', color: '#888' }}>发光颜色</span>
+                <input
+                  type="color"
+                  value={config.spiralRibbon?.glowColor || '#FF4444'}
+                  onChange={e => onChange({
+                    ...config,
+                    spiralRibbon: { ...config.spiralRibbon!, glowColor: e.target.value }
+                  })}
+                  style={{ width: '100%', height: '28px', cursor: 'pointer', border: 'none', borderRadius: '4px' }}
+                />
+              </div>
+            </div>
+            
+            {/* 宽度 */}
+            <div style={{ ...labelStyle, marginTop: '10px' }}>
+              <span>带子宽度: {(config.spiralRibbon?.width || 0.8).toFixed(1)}</span>
+            </div>
+            <input
+              type="range"
+              min="0.3"
+              max="2"
+              step="0.1"
+              value={config.spiralRibbon?.width || 0.8}
+              onChange={e => onChange({
+                ...config,
+                spiralRibbon: { ...config.spiralRibbon!, width: Number(e.target.value) }
+              })}
+              style={sliderStyle}
+            />
+            
+            {/* 圈数 */}
+            <div style={{ ...labelStyle, marginTop: '8px' }}>
+              <span>盘旋圈数: {config.spiralRibbon?.turns || 5}</span>
+            </div>
+            <input
+              type="range"
+              min="2"
+              max="8"
+              step="1"
+              value={config.spiralRibbon?.turns || 5}
+              onChange={e => onChange({
+                ...config,
+                spiralRibbon: { ...config.spiralRibbon!, turns: Number(e.target.value) }
+              })}
+              style={sliderStyle}
+            />
+            
+            {/* 双层 */}
+            <div style={{ ...labelStyle, marginTop: '10px' }}>
+              <span>双层带子</span>
+              <input
+                type="checkbox"
+                checked={config.spiralRibbon?.double || false}
+                onChange={e => onChange({
+                  ...config,
+                  spiralRibbon: { ...config.spiralRibbon!, double: e.target.checked }
+                })}
+                style={{ accentColor: '#FFD700' }}
+              />
+            </div>
+            <p style={{ fontSize: '9px', color: '#666', margin: '4px 0 0 0' }}>
+              双层会显示两条交错的带子（红+金）
+            </p>
+          </>
+        )}
+      </CollapsibleSection>
 
       {/* 礼物堆 */}
-      <div style={sectionStyle}>
-        <div style={{ ...titleStyle, display: 'flex', alignItems: 'center', gap: '6px' }}><Gift size={14} /> 树底礼物</div>
+      <CollapsibleSection title="树底礼物" icon={<Gift size={14} />}>
         <div style={labelStyle}>
           <span>显示礼物堆</span>
           <input type="checkbox" checked={safeConfig.giftPile.enabled} onChange={e => onChange({ ...config, giftPile: { ...safeConfig.giftPile, enabled: e.target.checked } })} style={{ accentColor: '#FFD700' }} />
         </div>
         <div style={labelStyle}><span>数量: {safeConfig.giftPile.count || 18}</span></div>
         <input type="range" min="5" max="50" step="1" value={safeConfig.giftPile.count || 18} onChange={e => onChange({ ...config, giftPile: { ...safeConfig.giftPile, count: Number(e.target.value) } })} style={sliderStyle} />
-      </div>
+        {/* 礼物颜色 */}
+        <div style={{ marginTop: '10px' }}>
+          <div style={{ ...labelStyle, marginBottom: '6px' }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Palette size={12} /> 礼物颜色</span>
+            {config.giftPile?.colors && (
+              <button
+                onClick={() => onChange({ ...config, giftPile: { ...safeConfig.giftPile, colors: undefined } })}
+                style={{ background: 'none', border: 'none', color: '#ff6666', cursor: 'pointer', fontSize: '10px' }}
+              >
+                重置
+              </button>
+            )}
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '4px' }}>
+            {[0, 1, 2, 3].map(idx => (
+              <input
+                key={idx}
+                type="color"
+                value={(config.giftPile?.colors || ['#D32F2F', '#FFD700', '#1976D2', '#2E7D32'])[idx]}
+                onChange={e => {
+                  const newColors = [...(config.giftPile?.colors || ['#D32F2F', '#FFD700', '#1976D2', '#2E7D32'])];
+                  newColors[idx] = e.target.value;
+                  onChange({ ...config, giftPile: { ...safeConfig.giftPile, colors: newColors } });
+                }}
+                style={{ width: '100%', height: '24px', cursor: 'pointer', border: 'none', borderRadius: '4px' }}
+              />
+            ))}
+          </div>
+        </div>
+      </CollapsibleSection>
 
       {/* 飘落丝带 */}
-      <div style={sectionStyle}>
-        <div style={{ ...titleStyle, display: 'flex', alignItems: 'center', gap: '6px' }}><Ribbon size={14} /> 飘落丝带</div>
+      <CollapsibleSection title="飘落丝带" icon={<Ribbon size={14} />}>
         <div style={labelStyle}>
           <span>显示丝带</span>
           <input type="checkbox" checked={safeConfig.ribbons.enabled} onChange={e => onChange({ ...config, ribbons: { ...safeConfig.ribbons, enabled: e.target.checked } })} style={{ accentColor: '#FFD700' }} />
         </div>
         <div style={labelStyle}><span>数量: {safeConfig.ribbons.count}</span></div>
         <input type="range" min="10" max="100" step="5" value={safeConfig.ribbons.count} onChange={e => onChange({ ...config, ribbons: { ...safeConfig.ribbons, count: Number(e.target.value) } })} style={sliderStyle} />
-      </div>
+        {/* 丝带颜色 */}
+        <div style={{ marginTop: '10px' }}>
+          <div style={{ ...labelStyle, marginBottom: '6px' }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Palette size={12} /> 丝带颜色</span>
+            {config.ribbons?.colors && (
+              <button
+                onClick={() => onChange({ ...config, ribbons: { ...safeConfig.ribbons, colors: undefined } })}
+                style={{ background: 'none', border: 'none', color: '#ff6666', cursor: 'pointer', fontSize: '10px' }}
+              >
+                重置
+              </button>
+            )}
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '4px' }}>
+            {[0, 1, 2, 3, 4].map(idx => (
+              <input
+                key={idx}
+                type="color"
+                value={(config.ribbons?.colors || ['#FFD700', '#D32F2F', '#ECEFF1', '#FF69B4', '#00CED1'])[idx]}
+                onChange={e => {
+                  const newColors = [...(config.ribbons?.colors || ['#FFD700', '#D32F2F', '#ECEFF1', '#FF69B4', '#00CED1'])];
+                  newColors[idx] = e.target.value;
+                  onChange({ ...config, ribbons: { ...safeConfig.ribbons, colors: newColors } });
+                }}
+                style={{ width: '100%', height: '24px', cursor: 'pointer', border: 'none', borderRadius: '4px' }}
+              />
+            ))}
+          </div>
+        </div>
+      </CollapsibleSection>
 
       {/* 雪花 */}
-      <div style={sectionStyle}>
-        <div style={{ ...titleStyle, display: 'flex', alignItems: 'center', gap: '6px' }}><Snowflake size={14} /> 雪花</div>
+      <CollapsibleSection title="雪花" icon={<Snowflake size={14} />}>
         <div style={labelStyle}>
           <span>显示雪花</span>
           <input type="checkbox" checked={config.snow.enabled} onChange={e => onChange({ ...config, snow: { ...config.snow, enabled: e.target.checked } })} style={{ accentColor: '#FFD700' }} />
@@ -895,42 +1206,75 @@ export const SettingsPanel = ({ config, onChange, onClose, aiEnabled, onAiToggle
         <input type="range" min="0.5" max="5" step="0.1" value={config.snow.size} onChange={e => onChange({ ...config, snow: { ...config.snow, size: Number(e.target.value) } })} style={sliderStyle} />
         <div style={{ ...labelStyle, marginTop: '8px' }}><span>透明度: {config.snow.opacity.toFixed(1)}</span></div>
         <input type="range" min="0.1" max="1" step="0.1" value={config.snow.opacity} onChange={e => onChange({ ...config, snow: { ...config.snow, opacity: Number(e.target.value) } })} style={sliderStyle} />
-      </div>
+      </CollapsibleSection>
 
       {/* 底部雾气 */}
-      <div style={sectionStyle}>
-        <div style={{ ...titleStyle, display: 'flex', alignItems: 'center', gap: '6px' }}><CloudFog size={14} /> 底部雾气</div>
+      <CollapsibleSection title="底部雾气" icon={<CloudFog size={14} />}>
         <div style={labelStyle}>
           <span>显示雾气</span>
           <input type="checkbox" checked={safeConfig.fog.enabled} onChange={e => onChange({ ...config, fog: { ...safeConfig.fog, enabled: e.target.checked } })} style={{ accentColor: '#FFD700' }} />
         </div>
         <div style={labelStyle}><span>浓度: {safeConfig.fog.opacity.toFixed(1)}</span></div>
         <input type="range" min="0.1" max="0.8" step="0.05" value={safeConfig.fog.opacity} onChange={e => onChange({ ...config, fog: { ...safeConfig.fog, opacity: Number(e.target.value) } })} style={sliderStyle} />
-      </div>
+        <div style={{ marginTop: '8px' }}>
+          <span style={{ fontSize: '10px', color: '#888' }}>雾气颜色</span>
+          <input
+            type="color"
+            value={config.fog?.color || '#ffffff'}
+            onChange={e => onChange({ ...config, fog: { ...safeConfig.fog, color: e.target.value } })}
+            style={{ width: '100%', height: '28px', cursor: 'pointer', border: 'none', borderRadius: '4px', marginTop: '4px' }}
+          />
+        </div>
+      </CollapsibleSection>
 
       {/* 闪光 */}
-      <div style={sectionStyle}>
-        <div style={{ ...titleStyle, display: 'flex', alignItems: 'center', gap: '6px' }}><Sparkles size={14} /> 闪光粒子</div>
+      <CollapsibleSection title="闪光粒子" icon={<Sparkles size={14} />}>
         <div style={labelStyle}>
           <span>显示闪光</span>
           <input type="checkbox" checked={config.sparkles.enabled} onChange={e => onChange({ ...config, sparkles: { ...config.sparkles, enabled: e.target.checked } })} style={{ accentColor: '#FFD700' }} />
         </div>
         <div style={labelStyle}><span>数量: {config.sparkles.count}</span></div>
         <input type="range" min="100" max="1500" step="50" value={config.sparkles.count} onChange={e => onChange({ ...config, sparkles: { ...config.sparkles, count: Number(e.target.value) } })} style={sliderStyle} />
-      </div>
+      </CollapsibleSection>
 
       {/* 星空 */}
-      <div style={sectionStyle}>
-        <div style={{ ...titleStyle, display: 'flex', alignItems: 'center', gap: '6px' }}><Star size={14} /> 背景星空</div>
+      <CollapsibleSection title="背景星空" icon={<Star size={14} />}>
         <div style={labelStyle}>
           <span>显示星空</span>
-          <input type="checkbox" checked={config.stars.enabled} onChange={e => onChange({ ...config, stars: { enabled: e.target.checked } })} style={{ accentColor: '#FFD700' }} />
+          <input type="checkbox" checked={config.stars.enabled} onChange={e => onChange({ ...config, stars: { ...config.stars, enabled: e.target.checked } })} style={{ accentColor: '#FFD700' }} />
         </div>
-      </div>
+        {config.stars.enabled && (
+          <>
+            <div style={{ ...labelStyle, marginTop: '8px' }}>
+              <span>星星数量: {config.stars.count || 5000}</span>
+            </div>
+            <input
+              type="range"
+              min="1000"
+              max="10000"
+              step="500"
+              value={config.stars.count || 5000}
+              onChange={e => onChange({ ...config, stars: { ...config.stars, count: Number(e.target.value) } })}
+              style={sliderStyle}
+            />
+            <div style={{ ...labelStyle, marginTop: '8px' }}>
+              <span>星星亮度: {(config.stars.brightness || 4).toFixed(1)}</span>
+            </div>
+            <input
+              type="range"
+              min="1"
+              max="8"
+              step="0.5"
+              value={config.stars.brightness || 4}
+              onChange={e => onChange({ ...config, stars: { ...config.stars, brightness: Number(e.target.value) } })}
+              style={sliderStyle}
+            />
+          </>
+        )}
+      </CollapsibleSection>
 
       {/* 树顶星星/头像 */}
-      <div style={sectionStyle}>
-        <div style={{ ...titleStyle, display: 'flex', alignItems: 'center', gap: '6px' }}><Star size={14} /> 树顶星星</div>
+      <CollapsibleSection title="树顶星星" icon={<Star size={14} />}>
         <p style={{ fontSize: '10px', color: '#888', margin: '0 0 8px 0' }}>
           上传头像替换树顶星星（五角星形状裁剪）
         </p>
@@ -986,23 +1330,88 @@ export const SettingsPanel = ({ config, onChange, onClose, aiEnabled, onAiToggle
             </p>
           </div>
         )}
-      </div>
+      </CollapsibleSection>
 
       {/* Bloom 效果 */}
-      <div style={sectionStyle}>
-        <div style={{ ...titleStyle, display: 'flex', alignItems: 'center', gap: '6px' }}><Rainbow size={14} /> 泛光效果</div>
+      <CollapsibleSection title="泛光效果" icon={<Rainbow size={14} />}>
         <div style={labelStyle}>
           <span>开启泛光</span>
           <input type="checkbox" checked={config.bloom.enabled} onChange={e => onChange({ ...config, bloom: { ...config.bloom, enabled: e.target.checked } })} style={{ accentColor: '#FFD700' }} />
         </div>
         <div style={labelStyle}><span>强度: {config.bloom.intensity.toFixed(1)}</span></div>
         <input type="range" min="0.5" max="3" step="0.1" value={config.bloom.intensity} onChange={e => onChange({ ...config, bloom: { ...config.bloom, intensity: Number(e.target.value) } })} style={sliderStyle} />
-      </div>
+      </CollapsibleSection>
+
+      {/* 场景背景 */}
+      <CollapsibleSection title="场景背景" icon={<Palette size={14} />}>
+        <div style={{ marginTop: '4px' }}>
+          <span style={{ fontSize: '10px', color: '#888' }}>背景颜色</span>
+          <input
+            type="color"
+            value={config.background?.color || '#000300'}
+            onChange={e => onChange({ ...config, background: { color: e.target.value } })}
+            style={{ width: '100%', height: '28px', cursor: 'pointer', border: 'none', borderRadius: '4px', marginTop: '4px' }}
+          />
+        </div>
+        <p style={{ fontSize: '9px', color: '#666', margin: '4px 0 0 0' }}>
+          深色背景效果更佳
+        </p>
+      </CollapsibleSection>
+
+      {/* 特效颜色 */}
+      <CollapsibleSection title="特效颜色" icon={<Heart size={14} />}>
+        <p style={{ fontSize: '10px', color: '#888', margin: '0 0 8px 0' }}>
+          手势触发的爱心和文字粒子颜色
+        </p>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+          <div>
+            <span style={{ fontSize: '10px', color: '#888' }}>爱心颜色</span>
+            <input
+              type="color"
+              value={config.heartEffect?.color || '#FF1493'}
+              onChange={e => onChange({ ...config, heartEffect: { ...config.heartEffect, color: e.target.value } })}
+              style={{ width: '100%', height: '28px', cursor: 'pointer', border: 'none', borderRadius: '4px' }}
+            />
+          </div>
+          <div>
+            <span style={{ fontSize: '10px', color: '#888' }}>文字颜色</span>
+            <input
+              type="color"
+              value={config.textEffect?.color || '#FFD700'}
+              onChange={e => onChange({ ...config, textEffect: { ...config.textEffect, color: e.target.value } })}
+              style={{ width: '100%', height: '28px', cursor: 'pointer', border: 'none', borderRadius: '4px' }}
+            />
+          </div>
+        </div>
+        {/* 粒子大小 */}
+        <div style={{ ...labelStyle, marginTop: '10px' }}>
+          <span>爱心大小: {(config.heartEffect?.size || 1).toFixed(1)}x</span>
+        </div>
+        <input
+          type="range"
+          min="0.5"
+          max="2"
+          step="0.1"
+          value={config.heartEffect?.size || 1}
+          onChange={e => onChange({ ...config, heartEffect: { ...config.heartEffect, color: config.heartEffect?.color || '#FF1493', size: Number(e.target.value) } })}
+          style={sliderStyle}
+        />
+        <div style={{ ...labelStyle, marginTop: '8px' }}>
+          <span>文字大小: {(config.textEffect?.size || 1).toFixed(1)}x</span>
+        </div>
+        <input
+          type="range"
+          min="0.5"
+          max="2"
+          step="0.1"
+          value={config.textEffect?.size || 1}
+          onChange={e => onChange({ ...config, textEffect: { ...config.textEffect, color: config.textEffect?.color || '#FFD700', size: Number(e.target.value) } })}
+          style={sliderStyle}
+        />
+      </CollapsibleSection>
 
       {/* 背景音乐 */}
-      <div style={sectionStyle}>
-        <div style={{ ...titleStyle, display: 'flex', alignItems: 'center', gap: '6px' }}><Music size={14} /> 背景音乐</div>
-        
+      <CollapsibleSection title="背景音乐" icon={<Music size={14} />}>
         {/* 音乐选择 */}
         <div style={labelStyle}><span>选择音乐</span></div>
         <select
@@ -1098,11 +1507,10 @@ export const SettingsPanel = ({ config, onChange, onClose, aiEnabled, onAiToggle
           onChange={e => onChange({ ...config, music: { ...safeConfig.music, volume: Number(e.target.value) } })}
           style={sliderStyle}
         />
-      </div>
+      </CollapsibleSection>
 
       {/* AI 手势识别 */}
-      <div style={sectionStyle}>
-        <div style={{ ...titleStyle, display: 'flex', alignItems: 'center', gap: '6px' }}><Bot size={14} /> AI 手势识别</div>
+      <CollapsibleSection title="AI 手势识别" icon={<Bot size={14} />}>
         <div style={labelStyle}>
           <span>启用 AI</span>
           <input type="checkbox" checked={aiEnabled} onChange={e => onAiToggle(e.target.checked)} style={{ accentColor: '#FFD700' }} />
@@ -1110,12 +1518,11 @@ export const SettingsPanel = ({ config, onChange, onClose, aiEnabled, onAiToggle
         <p style={{ fontSize: '10px', color: '#666', margin: '4px 0 0 0' }}>
           {isMobile() ? '移动端建议关闭以提升性能' : '需要摄像头权限，用手势控制树'}
         </p>
-      </div>
+      </CollapsibleSection>
 
       {/* 手势配置 */}
       {aiEnabled && (
-        <div style={{ marginBottom: '8px' }}>
-          <div style={{ ...titleStyle, display: 'flex', alignItems: 'center', gap: '6px' }}><Hand size={14} /> 手势配置</div>
+        <CollapsibleSection title="手势配置" icon={<Hand size={14} />}>
           <p style={{ fontSize: '10px', color: '#888', margin: '0 0 10px 0' }}>
             自定义每个手势对应的功能
           </p>
@@ -1264,7 +1671,7 @@ export const SettingsPanel = ({ config, onChange, onClose, aiEnabled, onAiToggle
 
           {/* 特效配置 */}
           <div style={{ marginTop: '16px', paddingTop: '12px', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
-            <div style={{ ...titleStyle, display: 'flex', alignItems: 'center', gap: '6px' }}><Sparkles size={14} /> 特效配置</div>
+            <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#FFD700', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}><Sparkles size={14} /> 特效配置</div>
             
             <div style={labelStyle}>
               <span>显示时隐藏圣诞树</span>
@@ -1351,7 +1758,7 @@ export const SettingsPanel = ({ config, onChange, onClose, aiEnabled, onAiToggle
               style={sliderStyle}
             />
           </div>
-        </div>
+        </CollapsibleSection>
       )}
     </div>
   );

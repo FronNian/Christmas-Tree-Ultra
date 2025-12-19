@@ -80,7 +80,7 @@ export default function SharePage({ shareId }: SharePageProps) {
 
   // 从分享数据加载配置
   const [sceneConfig, setSceneConfig] = useState<SceneConfig>({
-    foliage: { enabled: true, count: mobile ? 5000 : 15000 },
+    foliage: { enabled: true, count: mobile ? 5000 : 15000, color: '#00FF88', size: 1, glow: 1 },
     lights: { enabled: true, count: mobile ? 100 : 400 },
     elements: { enabled: true, count: mobile ? 150 : 500 },
     snow: { enabled: true, count: mobile ? 500 : 2000, speed: 2, size: 0.5, opacity: 0.8 },
@@ -498,6 +498,8 @@ export default function SharePage({ shareId }: SharePageProps) {
         enabled={sceneConfig.title?.enabled ?? true} 
         size={sceneConfig.title?.size || 48}
         font={sceneConfig.title?.font || 'Mountains of Christmas'}
+        color={sceneConfig.title?.color || '#FFD700'}
+        shadowColor={sceneConfig.title?.shadowColor}
       />
 
       {/* 使用教程 */}

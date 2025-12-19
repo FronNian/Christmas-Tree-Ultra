@@ -120,10 +120,20 @@ export const sanitizeShareConfig = (config: unknown): Record<string, unknown> =>
   // 树叶配置
   if (cfg.foliage && typeof cfg.foliage === 'object') {
     const f = cfg.foliage as Record<string, unknown>;
-    sanitized.foliage = {
+    const foliage: Record<string, unknown> = {
       enabled: sanitizeBoolean(f.enabled, true),
-      count: sanitizeNumber(f.count, 1000, 30000, 15000)
+      count: sanitizeNumber(f.count, 5000, 25000, 15000),
+      size: sanitizeNumber(f.size, 0.5, 2, 1),
+      glow: sanitizeNumber(f.glow, 0.5, 2, 1)
     };
+    // 颜色验证
+    if (typeof f.color === 'string' && /^#[0-9A-Fa-f]{6}$/.test(f.color)) {
+      foliage.color = f.color;
+    }
+    if (typeof f.chaosColor === 'string' && /^#[0-9A-Fa-f]{6}$/.test(f.chaosColor)) {
+      foliage.chaosColor = f.chaosColor;
+    }
+    sanitized.foliage = foliage;
   }
   
   // 彩灯配置
@@ -217,7 +227,9 @@ export const sanitizeShareConfig = (config: unknown): Record<string, unknown> =>
   if (cfg.stars && typeof cfg.stars === 'object') {
     const st = cfg.stars as Record<string, unknown>;
     sanitized.stars = {
-      enabled: sanitizeBoolean(st.enabled, true)
+      enabled: sanitizeBoolean(st.enabled, true),
+      count: sanitizeNumber(st.count, 1000, 10000, 5000),
+      brightness: sanitizeNumber(st.brightness, 1, 8, 4)
     };
   }
   
@@ -233,39 +245,122 @@ export const sanitizeShareConfig = (config: unknown): Record<string, unknown> =>
   // 标题配置
   if (cfg.title && typeof cfg.title === 'object') {
     const t = cfg.title as Record<string, unknown>;
-    sanitized.title = {
+    const title: Record<string, unknown> = {
       enabled: sanitizeBoolean(t.enabled, true),
       text: sanitizeText(t.text, 100) || 'Merry Christmas',
       size: sanitizeNumber(t.size, 12, 200, 48),
       font: sanitizeFont(t.font)
     };
+    // 颜色验证
+    if (typeof t.color === 'string' && /^#[0-9A-Fa-f]{6}$/.test(t.color)) {
+      title.color = t.color;
+    }
+    if (typeof t.shadowColor === 'string' && /^#[0-9A-Fa-f]{6}$/.test(t.shadowColor)) {
+      title.shadowColor = t.shadowColor;
+    }
+    sanitized.title = title;
   }
   
   // 礼物堆配置
   if (cfg.giftPile && typeof cfg.giftPile === 'object') {
     const g = cfg.giftPile as Record<string, unknown>;
-    sanitized.giftPile = {
+    const giftPile: Record<string, unknown> = {
       enabled: sanitizeBoolean(g.enabled, true),
       count: sanitizeNumber(g.count, 1, 100, 18)
     };
+    // 颜色数组验证
+    if (Array.isArray(g.colors)) {
+      const validColors = g.colors
+        .slice(0, 6)
+        .filter((c): c is string => typeof c === 'string' && /^#[0-9A-Fa-f]{6}$/.test(c));
+      if (validColors.length > 0) {
+        giftPile.colors = validColors;
+      }
+    }
+    sanitized.giftPile = giftPile;
   }
   
   // 丝带配置
   if (cfg.ribbons && typeof cfg.ribbons === 'object') {
     const r = cfg.ribbons as Record<string, unknown>;
-    sanitized.ribbons = {
+    const ribbons: Record<string, unknown> = {
       enabled: sanitizeBoolean(r.enabled, true),
       count: sanitizeNumber(r.count, 10, 200, 50)
     };
+    // 颜色数组验证
+    if (Array.isArray(r.colors)) {
+      const validColors = r.colors
+        .slice(0, 6)
+        .filter((c): c is string => typeof c === 'string' && /^#[0-9A-Fa-f]{6}$/.test(c));
+      if (validColors.length > 0) {
+        ribbons.colors = validColors;
+      }
+    }
+    sanitized.ribbons = ribbons;
   }
   
   // 雾气配置
   if (cfg.fog && typeof cfg.fog === 'object') {
     const fo = cfg.fog as Record<string, unknown>;
-    sanitized.fog = {
+    const fog: Record<string, unknown> = {
       enabled: sanitizeBoolean(fo.enabled, true),
       opacity: sanitizeNumber(fo.opacity, 0.1, 1, 0.3)
     };
+    if (typeof fo.color === 'string' && /^#[0-9A-Fa-f]{6}$/.test(fo.color)) {
+      fog.color = fo.color;
+    }
+    sanitized.fog = fog;
+  }
+  
+  // 背景配置
+  if (cfg.background && typeof cfg.background === 'object') {
+    const bg = cfg.background as Record<string, unknown>;
+    if (typeof bg.color === 'string' && /^#[0-9A-Fa-f]{6}$/.test(bg.color)) {
+      sanitized.background = { color: bg.color };
+    }
+  }
+  
+  // 爱心特效配置
+  if (cfg.heartEffect && typeof cfg.heartEffect === 'object') {
+    const he = cfg.heartEffect as Record<string, unknown>;
+    const heartEffect: Record<string, unknown> = {
+      size: sanitizeNumber(he.size, 0.5, 2, 1)
+    };
+    if (typeof he.color === 'string' && /^#[0-9A-Fa-f]{6}$/.test(he.color)) {
+      heartEffect.color = he.color;
+    }
+    sanitized.heartEffect = heartEffect;
+  }
+  
+  // 文字特效配置
+  if (cfg.textEffect && typeof cfg.textEffect === 'object') {
+    const te = cfg.textEffect as Record<string, unknown>;
+    const textEffect: Record<string, unknown> = {
+      size: sanitizeNumber(te.size, 0.5, 2, 1)
+    };
+    if (typeof te.color === 'string' && /^#[0-9A-Fa-f]{6}$/.test(te.color)) {
+      textEffect.color = te.color;
+    }
+    sanitized.textEffect = textEffect;
+  }
+  
+  // 螺旋带子配置
+  if (cfg.spiralRibbon && typeof cfg.spiralRibbon === 'object') {
+    const sr = cfg.spiralRibbon as Record<string, unknown>;
+    const spiralRibbon: Record<string, unknown> = {
+      enabled: sanitizeBoolean(sr.enabled, true),
+      width: sanitizeNumber(sr.width, 0.3, 2, 0.8),
+      turns: sanitizeNumber(sr.turns, 2, 8, 5),
+      double: sanitizeBoolean(sr.double, false)
+    };
+    // 颜色验证
+    if (typeof sr.color === 'string' && /^#[0-9A-Fa-f]{6}$/.test(sr.color)) {
+      spiralRibbon.color = sr.color;
+    }
+    if (typeof sr.glowColor === 'string' && /^#[0-9A-Fa-f]{6}$/.test(sr.glowColor)) {
+      spiralRibbon.glowColor = sr.glowColor;
+    }
+    sanitized.spiralRibbon = spiralRibbon;
   }
   
   // 手势文字配置
@@ -382,6 +477,70 @@ export const sanitizeShareConfig = (config: unknown): Record<string, unknown> =>
       scatterShape,
       gatherShape
     };
+  }
+  
+  // 时间轴配置
+  if (cfg.timeline && typeof cfg.timeline === 'object') {
+    const t = cfg.timeline as Record<string, unknown>;
+    const timeline: Record<string, unknown> = {
+      enabled: sanitizeBoolean(t.enabled, false),
+      autoPlay: sanitizeBoolean(t.autoPlay, true),
+      loop: sanitizeBoolean(t.loop, false),
+      steps: []
+    };
+    
+    // 验证步骤数组
+    if (Array.isArray(t.steps)) {
+      const allowedTypes = ['intro', 'photo', 'heart', 'text', 'tree'];
+      const validSteps = t.steps
+        .slice(0, 20) // 最多20个步骤
+        .filter((step): step is Record<string, unknown> => 
+          step && typeof step === 'object' && 
+          typeof (step as Record<string, unknown>).type === 'string' &&
+          allowedTypes.includes((step as Record<string, unknown>).type as string)
+        )
+        .map(step => {
+          const base = {
+            id: typeof step.id === 'string' ? step.id.slice(0, 20) : Math.random().toString(36).substr(2, 9),
+            type: step.type as string,
+            duration: sanitizeNumber(step.duration, 1000, 30000, 3000),
+            delay: sanitizeNumber(step.delay, 0, 10000, 0)
+          };
+          
+          switch (step.type) {
+            case 'intro':
+              return {
+                ...base,
+                text: sanitizeText(step.text, 100) || '献给最特别的你',
+                subText: step.subText ? sanitizeText(step.subText, 100) : undefined
+              };
+            case 'photo':
+              return {
+                ...base,
+                photoIndex: sanitizeNumber(step.photoIndex, -1, 100, -1)
+              };
+            case 'heart':
+              return {
+                ...base,
+                showPhoto: sanitizeBoolean(step.showPhoto, false),
+                photoIndex: sanitizeNumber(step.photoIndex, -1, 100, -1)
+              };
+            case 'text':
+              return {
+                ...base,
+                text: sanitizeText(step.text, 50) || 'MERRY CHRISTMAS'
+              };
+            case 'tree':
+              return base;
+            default:
+              return base;
+          }
+        });
+      
+      timeline.steps = validSteps;
+    }
+    
+    sanitized.timeline = timeline;
   }
   
   return sanitized;

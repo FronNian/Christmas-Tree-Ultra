@@ -23,10 +23,48 @@ const easingFunctions: Record<AnimationEasing, (t: number) => number> = {
   }
 };
 
+// 创建螺旋几何体
+const createSpiralGeometry = (turns: number, width: number, angleOffset: number = 0) => {
+  const treeHeight = CONFIG.tree.height;
+  const baseRadius = CONFIG.tree.radius;
+  const ribbonThickness = 0.1;
+  const segments = 200;
+  
+  const shape = new THREE.Shape();
+  shape.moveTo(0, -width / 2);
+  shape.lineTo(ribbonThickness, -width / 2);
+  shape.lineTo(ribbonThickness, width / 2);
+  shape.lineTo(0, width / 2);
+  shape.closePath();
+
+  const points: THREE.Vector3[] = [];
+  for (let i = 0; i <= segments; i++) {
+    const t = i / segments;
+    const angle = t * Math.PI * 2 * turns + angleOffset;
+    const y = t * treeHeight - treeHeight / 2 + 1;
+    const radiusAtHeight = baseRadius * (1 - t * 0.85) + 1;
+    const x = Math.cos(angle) * radiusAtHeight;
+    const z = Math.sin(angle) * radiusAtHeight;
+    points.push(new THREE.Vector3(x, y, z));
+  }
+
+  const curve = new THREE.CatmullRomCurve3(points);
+  return new THREE.ExtrudeGeometry(shape, {
+    steps: segments,
+    bevelEnabled: false,
+    extrudePath: curve,
+  });
+};
+
 interface SpiralRibbonProps {
   state: SceneState;
   color?: string;
   glowColor?: string;
+  width?: number;
+  turns?: number;
+  double?: boolean;
+  secondColor?: string;
+  secondGlowColor?: string;
   easing?: AnimationEasing;
   speed?: number;
 }
@@ -35,57 +73,30 @@ export const SpiralRibbon = ({
   state, 
   color = '#FF4444',
   glowColor = '#FF6666',
+  width = 0.8,
+  turns = 5,
+  double = false,
+  secondColor = '#FFD700',
+  secondGlowColor = '#FFEC8B',
   easing = 'easeInOut',
   speed = 1
 }: SpiralRibbonProps) => {
   const ribbonRef = useRef<THREE.Mesh>(null);
+  const ribbon2Ref = useRef<THREE.Mesh>(null);
   const materialRef = useRef<THREE.MeshStandardMaterial>(null);
+  const material2Ref = useRef<THREE.MeshStandardMaterial>(null);
   const progressRef = useRef(0);
 
   // 创建螺旋丝带几何体
   const ribbonGeometry = useMemo(() => {
-    const treeHeight = CONFIG.tree.height;
-    const baseRadius = CONFIG.tree.radius;
-    
-    // 丝带参数
-    const turns = 5; // 缠绕圈数
-    const ribbonWidth = 0.8;
-    const ribbonThickness = 0.1;
-    const segments = 200;
-    
-    const shape = new THREE.Shape();
-    shape.moveTo(0, -ribbonWidth / 2);
-    shape.lineTo(ribbonThickness, -ribbonWidth / 2);
-    shape.lineTo(ribbonThickness, ribbonWidth / 2);
-    shape.lineTo(0, ribbonWidth / 2);
-    shape.closePath();
+    return createSpiralGeometry(turns, width, 0);
+  }, [turns, width]);
 
-    // 创建螺旋路径
-    const points: THREE.Vector3[] = [];
-    for (let i = 0; i <= segments; i++) {
-      const t = i / segments;
-      const angle = t * Math.PI * 2 * turns;
-      const y = t * treeHeight - treeHeight / 2 + 1;
-      
-      // 圣诞树是锥形，半径随高度减小
-      const radiusAtHeight = baseRadius * (1 - t * 0.85) + 1;
-      
-      const x = Math.cos(angle) * radiusAtHeight;
-      const z = Math.sin(angle) * radiusAtHeight;
-      
-      points.push(new THREE.Vector3(x, y, z));
-    }
-
-    const curve = new THREE.CatmullRomCurve3(points);
-    
-    const extrudeSettings = {
-      steps: segments,
-      bevelEnabled: false,
-      extrudePath: curve,
-    };
-
-    return new THREE.ExtrudeGeometry(shape, extrudeSettings);
-  }, []);
+  // 第二条螺旋（双层时使用，偏移半圈）
+  const ribbon2Geometry = useMemo(() => {
+    if (!double) return null;
+    return createSpiralGeometry(turns, width, Math.PI);
+  }, [turns, width, double]);
 
   // 动画持续时间（秒），speed 越大越快
   const duration = 1 / Math.max(0.3, Math.min(3, speed));
@@ -107,26 +118,47 @@ export const SpiralRibbon = ({
     if (ribbonRef.current) {
       ribbonRef.current.scale.setScalar(Math.max(0.01, t));
     }
+    if (ribbon2Ref.current) {
+      ribbon2Ref.current.scale.setScalar(Math.max(0.01, t));
+    }
 
     // 发光脉冲
+    const time = frameState.clock.elapsedTime;
+    const pulse = 0.8 + Math.sin(time * 3) * 0.2;
     if (materialRef.current) {
-      const time = frameState.clock.elapsedTime;
-      const pulse = 0.8 + Math.sin(time * 3) * 0.2;
       materialRef.current.emissiveIntensity = pulse * t;
+    }
+    if (material2Ref.current) {
+      material2Ref.current.emissiveIntensity = pulse * t;
     }
   });
 
   return (
-    <mesh ref={ribbonRef} geometry={ribbonGeometry}>
-      <meshStandardMaterial
-        ref={materialRef}
-        color={color}
-        emissive={glowColor}
-        emissiveIntensity={0.8}
-        roughness={0.3}
-        metalness={0.5}
-        side={THREE.DoubleSide}
-      />
-    </mesh>
+    <group>
+      <mesh ref={ribbonRef} geometry={ribbonGeometry}>
+        <meshStandardMaterial
+          ref={materialRef}
+          color={color}
+          emissive={glowColor}
+          emissiveIntensity={0.8}
+          roughness={0.3}
+          metalness={0.5}
+          side={THREE.DoubleSide}
+        />
+      </mesh>
+      {double && ribbon2Geometry && (
+        <mesh ref={ribbon2Ref} geometry={ribbon2Geometry}>
+          <meshStandardMaterial
+            ref={material2Ref}
+            color={secondColor}
+            emissive={secondGlowColor}
+            emissiveIntensity={0.8}
+            roughness={0.3}
+            metalness={0.5}
+            side={THREE.DoubleSide}
+          />
+        </mesh>
+      )}
+    </group>
   );
 };

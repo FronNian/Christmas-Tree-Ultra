@@ -1,9 +1,10 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Canvas } from '@react-three/fiber';
 import * as THREE from 'three';
-import { Experience, GestureController, SettingsPanel, TitleOverlay, Modal, LyricsDisplay, AvatarCropper, IntroOverlay, WelcomeTutorial, PrivacyNotice, photoScreenPositions } from './components';
+import { Experience, GestureController, SettingsPanel, TitleOverlay, Modal, LyricsDisplay, AvatarCropper, IntroOverlay, WelcomeTutorial, PrivacyNotice, CenterPhoto, CSSTextEffect, photoScreenPositions } from './components';
 import { CHRISTMAS_MUSIC_URL } from './config';
 import { isMobile, fileToBase64 } from './utils/helpers';
+import { useTimeline } from './hooks/useTimeline';
 import { 
   uploadShare, getLocalShare, getShareUrl, updateShare, getShare,
   saveLocalConfig, getLocalConfig, saveLocalPhotos, getLocalPhotos,
@@ -11,7 +12,20 @@ import {
 } from './lib/r2';
 import type { SceneState, SceneConfig, GestureConfig, GestureAction, MusicConfig } from './types';
 import { PRESET_MUSIC } from './types';
-import { Volume2, VolumeX, Camera, Settings, Wrench, Link, TreePine, Sparkles, Loader, HelpCircle, Shield } from 'lucide-react';
+import { Volume2, VolumeX, Camera, Settings, Wrench, Link, TreePine, Sparkles, Loader, HelpCircle, Shield, Heart, Type, Play } from 'lucide-react';
+
+// 检测文字是否包含中文
+const containsChinese = (text: string): boolean => /[\u4e00-\u9fa5]/.test(text);
+
+// 判断是否应该使用 CSS 文字特效（中文或非粒子动画）
+const shouldUseCSSText = (text: string, animation?: string): boolean => {
+  if (!animation || animation === 'auto') {
+    // 自动模式：中文用 CSS，英文用粒子
+    return containsChinese(text);
+  }
+  // 明确指定粒子效果时用 3D 粒子，其他用 CSS
+  return animation !== 'particle';
+};
 
 // 深度合并配置对象
 function deepMergeConfig<T extends Record<string, unknown>>(target: T, source: Partial<T>): T {
@@ -65,6 +79,11 @@ export default function GrandTreeApp() {
   // 开场文案状态
   const [introShown, setIntroShown] = useState(false);
 
+  // 时间轴完成回调
+  const handleTimelineComplete = useCallback(() => {
+    setSceneState('FORMED');
+  }, []);
+
   // 教程状态 - 首次访问显示
   const [showTutorial, setShowTutorial] = useState(() => {
     try {
@@ -105,7 +124,7 @@ export default function GrandTreeApp() {
   const [sceneConfig, setSceneConfig] = useState<SceneConfig>(() => {
     const savedConfig = getLocalConfig();
     const defaultConfig = {
-      foliage: { enabled: true, count: mobile ? 5000 : 15000 },
+      foliage: { enabled: true, count: mobile ? 5000 : 15000, color: '#00FF88', size: 1, glow: 1 },
       lights: { enabled: true, count: mobile ? 100 : 400 },
       elements: { enabled: true, count: mobile ? 150 : 500 },
       snow: { enabled: true, count: mobile ? 500 : 2000, speed: 2, size: 0.5, opacity: 0.8 },
@@ -139,6 +158,18 @@ export default function GrandTreeApp() {
 
   // 是否隐藏圣诞树（显示特效时）
   const [hideTree, setHideTree] = useState(false);
+
+  // 获取已配置的文字列表
+  const configuredTexts = sceneConfig.gestureTexts || 
+    (sceneConfig.gestureText ? [sceneConfig.gestureText] : ['MERRY CHRISTMAS']);
+
+  // 时间轴播放器
+  const timeline = useTimeline(
+    sceneConfig.timeline,
+    uploadedPhotos.length,
+    handleTimelineComplete,
+    configuredTexts
+  );
 
   // 处理图片上传
   const handleFileUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -185,11 +216,19 @@ export default function GrandTreeApp() {
         setShowHeart(true);
         setShowText(false);
         if (effectConfig.hideTree) setHideTree(true);
+        
+        // 计算爱心特效持续时间：至少显示完所有照片一轮
+        const photoInterval = (sceneConfig.heartEffect as { photoInterval?: number } | undefined)?.photoInterval || 3000;
+        const photoCount = uploadedPhotos.length || 1;
+        // 粒子聚合时间(约2秒) + 每张照片显示时间 + 滑动动画时间(600ms) + 缓冲
+        const minDurationForPhotos = 2000 + photoCount * photoInterval + (photoCount - 1) * 600 + 1000;
+        const heartDuration = Math.max(effectConfig.duration, minDurationForPhotos);
+        
         heartTimeoutRef.current = setTimeout(() => {
           setShowHeart(false);
           if (effectConfig.hideTree) setHideTree(false);
           gestureActiveRef.current = false; // 效果结束，允许再次触发
-        }, effectConfig.duration);
+        }, heartDuration);
         break;
       case 'text':
         if (textTimeoutRef.current) clearTimeout(textTimeoutRef.current);
@@ -254,7 +293,27 @@ export default function GrandTreeApp() {
       default:
         break;
     }
-  }, [sceneConfig, mobile]);
+  }, [sceneConfig, mobile, uploadedPhotos]);
+
+  // 手动触发特效（按钮触发，支持切换开关）
+  const triggerEffect = useCallback((effect: 'heart' | 'text') => {
+    // 如果当前特效正在显示，则关闭它
+    if (effect === 'heart' && showHeart) {
+      setShowHeart(false);
+      setHideTree(false);
+      if (heartTimeoutRef.current) clearTimeout(heartTimeoutRef.current);
+      return;
+    }
+    if (effect === 'text' && showText) {
+      setShowText(false);
+      setHideTree(false);
+      if (textTimeoutRef.current) clearTimeout(textTimeoutRef.current);
+      if (textSwitchRef.current) clearInterval(textSwitchRef.current);
+      return;
+    }
+    // 否则触发特效
+    executeGestureAction(effect);
+  }, [showHeart, showText, executeGestureAction]);
 
   // 上一次触发的手势（防止重复触发）
   const lastGestureRef = useRef<string>('');
@@ -404,6 +463,45 @@ export default function GrandTreeApp() {
     }
     setMusicPlaying(!musicPlaying);
   }, [musicPlaying]);
+
+  // 时间轴播放时切换音乐
+  const previousMusicRef = useRef<string | null>(null);
+  
+  useEffect(() => {
+    if (!audioRef.current) return;
+    
+    const timelineMusic = sceneConfig.timeline?.music;
+    const isPlaying = timeline.state.isPlaying;
+    
+    if (isPlaying && timelineMusic) {
+      // 保存当前音乐，开始播放时间轴音乐
+      if (previousMusicRef.current === null) {
+        previousMusicRef.current = sceneConfig.music?.selected || 'christmas-stars';
+      }
+      
+      const preset = PRESET_MUSIC.find(m => m.id === timelineMusic);
+      if (preset && audioRef.current.src !== preset.url) {
+        const wasPlaying = !audioRef.current.paused;
+        audioRef.current.src = preset.url;
+        audioRef.current.currentTime = 0;
+        if (wasPlaying) {
+          audioRef.current.play().catch(() => {});
+        }
+      }
+    } else if (!isPlaying && previousMusicRef.current !== null) {
+      // 停止时恢复原来的音乐
+      const preset = PRESET_MUSIC.find(m => m.id === previousMusicRef.current);
+      if (preset) {
+        const wasPlaying = !audioRef.current.paused;
+        audioRef.current.src = preset.url;
+        audioRef.current.currentTime = 0;
+        if (wasPlaying) {
+          audioRef.current.play().catch(() => {});
+        }
+      }
+      previousMusicRef.current = null;
+    }
+  }, [timeline.state.isPlaying, sceneConfig.timeline?.music, sceneConfig.music?.selected]);
 
   // 分享状态
   const [isSharing, setIsSharing] = useState(false);
@@ -591,8 +689,8 @@ export default function GrandTreeApp() {
 
   return (
     <div style={{ width: '100vw', height: '100dvh', backgroundColor: '#000', position: 'fixed', top: 0, left: 0, overflow: 'hidden', touchAction: 'none' }}>
-      {/* 开场文案 */}
-      {sceneConfig.intro?.enabled && !introShown && (
+      {/* 开场文案 - 时间轴模式下由时间轴控制 */}
+      {!sceneConfig.timeline?.enabled && sceneConfig.intro?.enabled && !introShown && (
         <IntroOverlay
           text={sceneConfig.intro.text}
           subText={sceneConfig.intro.subText}
@@ -600,6 +698,41 @@ export default function GrandTreeApp() {
           onComplete={() => setIntroShown(true)}
         />
       )}
+
+      {/* 时间轴模式 - 开场文案 */}
+      <IntroOverlay
+        text={timeline.introText || ''}
+        subText={timeline.introSubText}
+        duration={timeline.state.currentStep?.duration || 3000}
+        onComplete={() => {}}
+        enabled={timeline.showIntro}
+      />
+
+      {/* 时间轴模式 - 居中照片展示 */}
+      <CenterPhoto
+        src={uploadedPhotos[timeline.photoIndex] || ''}
+        visible={timeline.showPhoto}
+        duration={timeline.state.currentStep?.duration}
+      />
+
+      {/* 时间轴模式 - CSS 文字特效（用于中文或指定CSS动画） */}
+      {(() => {
+        // 获取实际要显示的文字
+        const actualText = timeline.useConfiguredText 
+          ? configuredTexts[0] || 'MERRY CHRISTMAS'
+          : timeline.textContent || 'MERRY CHRISTMAS';
+        const shouldUseCSS = shouldUseCSSText(actualText, timeline.textAnimation);
+        
+        return (
+          <CSSTextEffect
+            text={actualText}
+            visible={timeline.showText && shouldUseCSS}
+            animation={timeline.textAnimation === 'particle' ? 'glow' : (timeline.textAnimation || 'glow')}
+            color={sceneConfig.textEffect?.color || '#FFD700'}
+            size={48}
+          />
+        );
+      })()}
 
       {/* 3D Canvas */}
       <div style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0, zIndex: 1 }}>
@@ -615,18 +748,26 @@ export default function GrandTreeApp() {
           frameloop="always"
         >
           <Experience
-            sceneState={sceneState}
+            sceneState={timeline.showTree ? 'FORMED' : sceneState}
             rotationSpeed={rotationSpeed}
             config={sceneConfig}
             selectedPhotoIndex={selectedPhotoIndex}
             onPhotoSelect={setSelectedPhotoIndex}
             photoPaths={uploadedPhotos}
-            showHeart={showHeart}
-            showText={showText}
-            customMessage={(sceneConfig.gestureTexts || [sceneConfig.gestureText || 'MERRY CHRISTMAS'])[currentTextIndex] || 'MERRY CHRISTMAS'}
-            hideTree={hideTree}
+            showHeart={showHeart || timeline.showHeart}
+            showText={showText || (timeline.showText && !shouldUseCSSText(
+              timeline.useConfiguredText ? configuredTexts[0] || '' : timeline.textContent,
+              timeline.textAnimation
+            ))}
+            customMessage={timeline.showText 
+              ? (timeline.useConfiguredText ? configuredTexts[0] || 'MERRY CHRISTMAS' : timeline.textContent || 'MERRY CHRISTMAS')
+              : (sceneConfig.gestureTexts || [sceneConfig.gestureText || 'MERRY CHRISTMAS'])[currentTextIndex] || 'MERRY CHRISTMAS'}
+            hideTree={hideTree || (timeline.state.isPlaying && !timeline.showTree)}
             heartCount={sceneConfig.gestureEffect?.heartCount || 1500}
             textCount={sceneConfig.gestureEffect?.textCount || 1000}
+            heartCenterPhoto={timeline.heartPhotoIndex !== null ? uploadedPhotos[timeline.heartPhotoIndex] : undefined}
+            heartCenterPhotos={uploadedPhotos.length > 0 ? uploadedPhotos : undefined}
+            heartPhotoInterval={(sceneConfig.heartEffect as { photoInterval?: number } | undefined)?.photoInterval || 3000}
           />
         </Canvas>
       </div>
@@ -651,6 +792,15 @@ export default function GrandTreeApp() {
           aiEnabled={aiEnabled}
           onAiToggle={setAiEnabled}
           onAvatarUpload={(imageUrl) => setAvatarToCrop(imageUrl)}
+          photoCount={uploadedPhotos.length}
+          onTimelinePreview={() => {
+            if (timeline.state.isPlaying) {
+              timeline.actions.stop();
+            } else {
+              timeline.actions.play();
+            }
+          }}
+          isTimelinePlaying={timeline.state.isPlaying}
         />
       )}
 
@@ -720,6 +870,46 @@ export default function GrandTreeApp() {
         >
           {sceneState === 'CHAOS' ? <><TreePine size={18} /> 聚合</> : <><Sparkles size={18} /> 散开</>}
         </button>
+        
+        {/* 特效按钮 */}
+        <button
+          onClick={() => triggerEffect('heart')}
+          style={{ ...buttonStyle(showHeart, mobile), display: 'flex', alignItems: 'center', gap: '4px' }}
+          title="显示爱心"
+        >
+          <Heart size={18} />
+        </button>
+        <button
+          onClick={() => triggerEffect('text')}
+          style={{ ...buttonStyle(showText, mobile), display: 'flex', alignItems: 'center', gap: '4px' }}
+          title="显示文字"
+        >
+          <Type size={18} />
+        </button>
+        
+        {/* 时间轴播放按钮 */}
+        {sceneConfig.timeline?.enabled && sceneConfig.timeline.steps.length > 0 && (
+          <button
+            onClick={() => {
+              if (timeline.state.isPlaying) {
+                timeline.actions.stop();
+              } else {
+                timeline.actions.play();
+              }
+            }}
+            style={{ 
+              ...buttonStyle(timeline.state.isPlaying, mobile), 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '4px',
+              background: timeline.state.isPlaying ? '#E91E63' : 'rgba(0,0,0,0.7)',
+              borderColor: '#E91E63'
+            }}
+            title={timeline.state.isPlaying ? '停止故事线' : '播放故事线'}
+          >
+            <Play size={18} />
+          </button>
+        )}
       </div>
 
       {/* AI 状态 */}
@@ -745,6 +935,8 @@ export default function GrandTreeApp() {
         enabled={sceneConfig.title?.enabled ?? true} 
         size={sceneConfig.title?.size || 48}
         font={sceneConfig.title?.font || 'Mountains of Christmas'}
+        color={sceneConfig.title?.color || '#FFD700'}
+        shadowColor={sceneConfig.title?.shadowColor}
       />
 
       {/* 歌词显示 */}

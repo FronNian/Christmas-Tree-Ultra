@@ -1,14 +1,17 @@
 import { useRef, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
-import { CONFIG } from '../../config';
 
 interface FallingRibbonsProps {
   count?: number;
+  colors?: string[];
 }
 
-export const FallingRibbons = ({ count = 50 }: FallingRibbonsProps) => {
+const DEFAULT_COLORS = ['#FFD700', '#D32F2F', '#ECEFF1', '#FF69B4', '#00CED1'];
+
+export const FallingRibbons = ({ count = 50, colors }: FallingRibbonsProps) => {
   const groupRef = useRef<THREE.Group>(null);
+  const ribbonColors = colors && colors.length > 0 ? colors : DEFAULT_COLORS;
 
   const ribbons = useMemo(() => {
     const items: {
@@ -19,7 +22,7 @@ export const FallingRibbons = ({ count = 50 }: FallingRibbonsProps) => {
       color: string;
       scale: number;
     }[] = [];
-    const colors = [CONFIG.colors.gold, CONFIG.colors.red, CONFIG.colors.silver, '#FF69B4', '#00CED1'];
+    const colorList = ribbonColors;
 
     for (let i = 0; i < count; i++) {
       items.push({
@@ -35,12 +38,12 @@ export const FallingRibbons = ({ count = 50 }: FallingRibbonsProps) => {
         ),
         rotation: Math.random() * Math.PI * 2,
         rotSpeed: (Math.random() - 0.5) * 3,
-        color: colors[Math.floor(Math.random() * colors.length)],
+        color: colorList[Math.floor(Math.random() * colorList.length)],
         scale: 0.3 + Math.random() * 0.5
       });
     }
     return items;
-  }, [count]);
+  }, [count, ribbonColors]);
 
   useFrame((state, delta) => {
     if (!groupRef.current) return;

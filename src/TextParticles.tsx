@@ -6,6 +6,7 @@ interface TextParticlesProps {
   text: string;
   visible: boolean;
   color?: string;
+  size?: number;
   onComplete?: () => void;
 }
 
@@ -143,7 +144,7 @@ const generateFilledTextPositions = (text: string, scale: number = 1, _density: 
 // 检测是否移动端
 const isMobileDevice = () => /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
-export const TextParticles = ({ text, visible, color = '#FFD700' }: TextParticlesProps) => {
+export const TextParticles = ({ text, visible, color = '#FFD700', size = 1 }: TextParticlesProps) => {
   const groupRef = useRef<THREE.Group>(null);
   const pointsRef = useRef<THREE.Points>(null);
   const materialRef = useRef<THREE.PointsMaterial>(null);
@@ -272,7 +273,7 @@ export const TextParticles = ({ text, visible, color = '#FFD700' }: TextParticle
         <pointsMaterial
           ref={materialRef}
           color={color}
-          size={mobile ? 0.15 : 0.35}
+          size={(mobile ? 0.15 : 0.35) * size}
           transparent
           opacity={0}
           sizeAttenuation

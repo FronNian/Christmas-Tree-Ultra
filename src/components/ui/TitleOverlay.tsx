@@ -31,9 +31,20 @@ interface TitleOverlayProps {
   enabled: boolean;
   size?: number;
   font?: string;
+  color?: string;
+  shadowColor?: string;
 }
 
-export const TitleOverlay = ({ text, enabled, size = 48, font = 'Mountains of Christmas' }: TitleOverlayProps) => {
+export const TitleOverlay = ({ 
+  text, 
+  enabled, 
+  size = 48, 
+  font = 'Mountains of Christmas',
+  color = '#FFD700',
+  shadowColor
+}: TitleOverlayProps) => {
+  // 如果没有指定阴影颜色，使用主颜色的半透明版本
+  const glowColor = shadowColor || color;
   const mobile = isMobile();
   const fontSize = mobile ? Math.max(size * 0.6, 20) : size;
 
@@ -53,8 +64,8 @@ export const TitleOverlay = ({ text, enabled, size = 48, font = 'Mountains of Ch
         fontFamily: `'${font.replace(/['"<>]/g, '')}', cursive`,
         fontSize: `${fontSize}px`,
         fontWeight: 700,
-        color: '#FFD700',
-        textShadow: '0 0 10px rgba(255, 215, 0, 0.8), 0 0 20px rgba(255, 215, 0, 0.6), 0 0 30px rgba(255, 215, 0, 0.4), 2px 2px 4px rgba(0,0,0,0.5)',
+        color: color,
+        textShadow: `0 0 10px ${glowColor}cc, 0 0 20px ${glowColor}99, 0 0 30px ${glowColor}66, 2px 2px 4px rgba(0,0,0,0.5)`,
         margin: 0,
         letterSpacing: '2px',
         animation: 'titleGlow 2s ease-in-out infinite alternate',
@@ -65,8 +76,8 @@ export const TitleOverlay = ({ text, enabled, size = 48, font = 'Mountains of Ch
       </h1>
       <style>{`
         @keyframes titleGlow {
-          from { text-shadow: 0 0 10px rgba(255, 215, 0, 0.8), 0 0 20px rgba(255, 215, 0, 0.6), 0 0 30px rgba(255, 215, 0, 0.4), 2px 2px 4px rgba(0,0,0,0.5); }
-          to { text-shadow: 0 0 15px rgba(255, 215, 0, 1), 0 0 30px rgba(255, 215, 0, 0.8), 0 0 45px rgba(255, 215, 0, 0.6), 2px 2px 4px rgba(0,0,0,0.5); }
+          from { text-shadow: 0 0 10px ${glowColor}cc, 0 0 20px ${glowColor}99, 0 0 30px ${glowColor}66, 2px 2px 4px rgba(0,0,0,0.5); }
+          to { text-shadow: 0 0 15px ${glowColor}, 0 0 30px ${glowColor}cc, 0 0 45px ${glowColor}99, 2px 2px 4px rgba(0,0,0,0.5); }
         }
       `}</style>
     </div>

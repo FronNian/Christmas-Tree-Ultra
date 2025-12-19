@@ -96,33 +96,49 @@ const calculateGatherDelay = (pos: THREE.Vector3, shape: GatherShape): number =>
   const angle = Math.atan2(pos.z, pos.x);
   
   switch (shape) {
-    case 'stack': return 0; // 礼物堆本身就在底部
-    case 'spiralIn': return ((angle + Math.PI) / (2 * Math.PI)) * 0.5;
-    case 'implode': return (1 - dist) * 0.4;
-    case 'waterfall': return 0.6; // 礼物堆最后落下
-    case 'wave': return normalizedX * 0.5;
+    case 'stack': 
+      // 礼物堆在底部，搭积木时最先到位
+      return 0;
+    case 'spiralIn': {
+      // 螺旋聚合：礼物堆按角度旋转进入（礼物在底部，只有一圈）
+      const normalizedAngle = (angle + Math.PI) / (2 * Math.PI);
+      return normalizedAngle * 0.85;
+    }
+    case 'implode': 
+      return (1 - Math.min(1, dist)) * 0.6;
+    case 'waterfall': 
+      // 瀑布时礼物堆最后落下
+      return 0.8;
+    case 'wave': 
+      return normalizedX * 0.7;
     case 'direct':
-    default: return 0;
+    default: 
+      return 0;
   }
 };
 
 interface GiftPileProps {
   state: SceneState;
   count?: number;
+  colors?: string[];
   easing?: AnimationEasing;
   speed?: number;
   scatterShape?: ScatterShape;
   gatherShape?: GatherShape;
 }
 
+const DEFAULT_GIFT_COLORS = ['#D32F2F', '#FFD700', '#1976D2', '#2E7D32'];
+
 export const GiftPile = ({ 
   state, 
   count = 18,
+  colors,
   easing = 'easeInOut',
   speed = 1,
   scatterShape = 'sphere',
   gatherShape = 'direct'
 }: GiftPileProps) => {
+  const giftColors = colors && colors.length > 0 ? colors : DEFAULT_GIFT_COLORS;
   const groupRef = useRef<THREE.Group>(null);
   const progressRef = useRef(0);
   
@@ -140,7 +156,6 @@ export const GiftPile = ({
       rotation: THREE.Euler;
       gatherDelay: number;
     }[] = [];
-    const colors = CONFIG.colors.giftColors;
 
     for (let i = 0; i < count; i++) {
       const pos = generateTargetPosition(i);
@@ -151,13 +166,13 @@ export const GiftPile = ({
       items.push({
         pos,
         scale: 0.8 + r1 * 1.2,
-        color: colors[Math.floor(r2 * colors.length)],
+        color: giftColors[Math.floor(r2 * giftColors.length)],
         rotation: new THREE.Euler(0, r3 * Math.PI, 0),
         gatherDelay: calculateGatherDelay(pos, gatherShape)
       });
     }
     return items;
-  }, [count, gatherShape]);
+  }, [count, gatherShape, giftColors]);
 
   // 初始化 chaos 位置
   useEffect(() => {
@@ -209,20 +224,25 @@ export const GiftPile = ({
     
     groupRef.current.children.forEach((child, i) => {
       const gift = gifts[i];
+      if (!gift) return;
       
       // 计算当前的 chaos 位置
       const currentChaos = currentChaosRef.current[i];
       const targetChaos = targetChaosRef.current[i];
+      
+      // 安全检查：如果 chaos 位置未初始化，跳过
+      if (!currentChaos || !targetChaos) return;
+      
       const chaosT = easeFn(chaosTransitionRef.current);
       const animatedChaosPos = currentChaos.clone().lerp(targetChaos, chaosT);
       
-      // 统一使用基于延迟的进度计算，确保打断时位置连续
+      // 基于延迟的进度计算：delay 越大，开始动画越晚
       const delay = gift.gatherDelay;
       let elementT: number;
       if (delay === 0) {
         elementT = easeFn(rawT);
       } else {
-        const adjustedT = Math.max(0, Math.min(1, (rawT - delay * 0.5) / (1 - delay * 0.5)));
+        const adjustedT = Math.max(0, Math.min(1, (rawT - delay) / (1 - delay)));
         elementT = easeFn(adjustedT);
       }
       

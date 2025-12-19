@@ -96,21 +96,37 @@ const generateTargetPosition = (index: number): THREE.Vector3 => {
   return new THREE.Vector3(currentRadius * Math.cos(theta), y, currentRadius * Math.sin(theta));
 };
 
-// 根据聚合形状计算延迟
+// 根据聚合形状计算延迟（0-1范围，值越大越晚开始动画）
 const calculateGatherDelay = (targetPos: THREE.Vector3, shape: GatherShape): number => {
-  const normalizedY = (targetPos.y + CONFIG.tree.height / 2) / CONFIG.tree.height;
+  const normalizedY = (targetPos.y + CONFIG.tree.height / 2) / CONFIG.tree.height; // 0=底部, 1=顶部
   const normalizedX = (targetPos.x + CONFIG.tree.radius) / (2 * CONFIG.tree.radius);
   const dist = Math.sqrt(targetPos.x * targetPos.x + targetPos.z * targetPos.z) / CONFIG.tree.radius;
   const angle = Math.atan2(targetPos.z, targetPos.x);
   
   switch (shape) {
-    case 'stack': return normalizedY * 0.7;
-    case 'spiralIn': return ((angle + Math.PI) / (2 * Math.PI) + normalizedY * 0.5) * 0.5;
-    case 'implode': return (1 - dist) * 0.5;
-    case 'waterfall': return (1 - normalizedY) * 0.7;
-    case 'wave': return normalizedX * 0.6;
+    case 'stack': 
+      // 搭积木：底部先到位，顶部最后
+      return normalizedY * 0.85;
+    case 'spiralIn': {
+      // 螺旋聚合：像盘山公路一样排队进入
+      const spiralTurns = 5;
+      const normalizedAngle = (angle + Math.PI) / (2 * Math.PI);
+      const currentTurn = normalizedY * spiralTurns;
+      const positionOnSpiral = (currentTurn + normalizedAngle) / (spiralTurns + 1);
+      return Math.min(0.9, positionOnSpiral * 0.95);
+    }
+    case 'implode': 
+      // 向心收缩
+      return (1 - Math.min(1, dist)) * 0.8;
+    case 'waterfall': 
+      // 瀑布
+      return (1 - normalizedY) * 0.85;
+    case 'wave': 
+      // 波浪
+      return normalizedX * 0.85;
     case 'direct':
-    default: return 0;
+    default: 
+      return 0;
   }
 };
 
@@ -213,21 +229,27 @@ export const FairyLights = ({
     
     groupRef.current.children.forEach((child, i) => {
       const objData = data[i];
+      if (!objData) return;
+      
       const mesh = child as THREE.Mesh;
       
       // 计算当前的 chaos 位置
       const currentChaos = currentChaosRef.current[i];
       const targetChaos = targetChaosRef.current[i];
+      
+      // 安全检查：如果 chaos 位置未初始化，跳过
+      if (!currentChaos || !targetChaos) return;
+      
       const chaosT = easeFn(chaosTransitionRef.current);
       const animatedChaosPos = currentChaos.clone().lerp(targetChaos, chaosT);
       
-      // 统一使用基于延迟的进度计算，确保打断时位置连续
+      // 基于延迟的进度计算：delay 越大，开始动画越晚
       const delay = objData.gatherDelay;
       let elementT: number;
       if (delay === 0) {
         elementT = easeFn(rawT);
       } else {
-        const adjustedT = Math.max(0, Math.min(1, (rawT - delay * 0.5) / (1 - delay * 0.5)));
+        const adjustedT = Math.max(0, Math.min(1, (rawT - delay) / (1 - delay)));
         elementT = easeFn(adjustedT);
       }
       
