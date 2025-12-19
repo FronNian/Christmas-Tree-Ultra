@@ -86,6 +86,10 @@ export default function SharePage({ shareId }: SharePageProps) {
   
   // 开场文案状态
   const [introShown, setIntroShown] = useState(false);
+  
+  // 音乐提示状态 - 故事线模式需要用户先点击才能播放音乐
+  const [showSoundPrompt, setShowSoundPrompt] = useState(false);
+  const [soundPromptDismissed, setSoundPromptDismissed] = useState(false);
 
   // Refs
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -160,6 +164,11 @@ export default function SharePage({ shareId }: SharePageProps) {
           setHideTree(true);
           setShowText(true);
           setPreloadTextPlayed(true);
+        }
+        
+        // 如果启用了故事线模式，显示音乐提示
+        if (cfg.timeline?.enabled && cfg.timeline.steps && cfg.timeline.steps.length > 0) {
+          setShowSoundPrompt(true);
         }
       }
       
@@ -718,6 +727,112 @@ export default function SharePage({ shareId }: SharePageProps) {
 
       {/* 使用教程 */}
       {showTutorial && <WelcomeTutorial onClose={() => setShowTutorial(false)} isSharePage gestureConfig={sceneConfig.gestures} />}
+
+      {/* 音乐提示 - 故事线模式 */}
+      {showSoundPrompt && !soundPromptDismissed && !showTutorial && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.85)',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 300,
+          gap: '20px'
+        }}>
+          <div style={{
+            fontSize: '48px',
+            marginBottom: '10px'
+          }}>
+            🎄
+          </div>
+          <div style={{
+            color: '#FFD700',
+            fontSize: mobile ? '18px' : '22px',
+            fontFamily: 'sans-serif',
+            textAlign: 'center',
+            padding: '0 20px',
+            maxWidth: '400px',
+            lineHeight: 1.6
+          }}>
+            有人为你准备了一份特别的圣诞礼物
+          </div>
+          <div style={{
+            color: 'rgba(255, 255, 255, 0.7)',
+            fontSize: mobile ? '14px' : '16px',
+            fontFamily: 'sans-serif',
+            textAlign: 'center',
+            marginTop: '5px'
+          }}>
+            建议打开声音获得最佳体验 🔊
+          </div>
+          <button
+            onClick={() => {
+              setSoundPromptDismissed(true);
+              setShowSoundPrompt(false);
+              // 播放音乐
+              if (audioRef.current) {
+                audioRef.current.play().then(() => {
+                  setMusicPlaying(true);
+                  // 自动开始播放故事线
+                  setTimeout(() => {
+                    timeline.actions.play();
+                  }, 500);
+                }).catch(() => {
+                  setMusicPlaying(false);
+                  // 即使音乐播放失败也开始故事线
+                  setTimeout(() => {
+                    timeline.actions.play();
+                  }, 500);
+                });
+              } else {
+                // 没有音频也开始故事线
+                setTimeout(() => {
+                  timeline.actions.play();
+                }, 500);
+              }
+            }}
+            style={{
+              marginTop: '20px',
+              padding: '16px 48px',
+              backgroundColor: '#FFD700',
+              border: 'none',
+              borderRadius: '30px',
+              color: '#000',
+              fontSize: mobile ? '16px' : '18px',
+              fontWeight: 'bold',
+              cursor: 'pointer',
+              fontFamily: 'sans-serif',
+              boxShadow: '0 4px 20px rgba(255, 215, 0, 0.4)'
+            }}
+          >
+            开始播放 ▶
+          </button>
+          <button
+            onClick={() => {
+              setSoundPromptDismissed(true);
+              setShowSoundPrompt(false);
+            }}
+            style={{
+              marginTop: '10px',
+              padding: '10px 20px',
+              backgroundColor: 'transparent',
+              border: '1px solid rgba(255, 255, 255, 0.3)',
+              borderRadius: '20px',
+              color: 'rgba(255, 255, 255, 0.6)',
+              fontSize: mobile ? '12px' : '14px',
+              cursor: 'pointer',
+              fontFamily: 'sans-serif'
+            }}
+          >
+            跳过，自己探索
+          </button>
+        </div>
+      )}
     </div>
   );
 }

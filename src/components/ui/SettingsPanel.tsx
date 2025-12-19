@@ -782,6 +782,70 @@ export const SettingsPanel = ({
         <div style={labelStyle}><span>数量: {config.elements.count || 500}</span></div>
         <input type="range" min="100" max="1000" step="50" value={config.elements.count || 500} onChange={e => onChange({ ...config, elements: { ...config.elements, count: Number(e.target.value) } })} style={sliderStyle} />
         
+        {/* 装饰类型开关 */}
+        <p style={{ fontSize: '10px', color: '#888', margin: '8px 0 6px 0' }}>
+          装饰类型（关闭后由其他类型替代）
+        </p>
+        <div style={{ display: 'flex', gap: '12px', marginBottom: '8px', flexWrap: 'wrap' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', color: '#ccc' }}>
+            <input 
+              type="checkbox" 
+              checked={config.elements.types?.box ?? true} 
+              onChange={e => onChange({ 
+                ...config, 
+                elements: { 
+                  ...config.elements, 
+                  types: { 
+                    box: e.target.checked, 
+                    sphere: config.elements.types?.sphere ?? true, 
+                    cylinder: config.elements.types?.cylinder ?? true 
+                  } 
+                } 
+              })} 
+              style={{ accentColor: '#FFD700' }} 
+            />
+            🎁 礼物盒
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', color: '#ccc' }}>
+            <input 
+              type="checkbox" 
+              checked={config.elements.types?.sphere ?? true} 
+              onChange={e => onChange({ 
+                ...config, 
+                elements: { 
+                  ...config.elements, 
+                  types: { 
+                    box: config.elements.types?.box ?? true, 
+                    sphere: e.target.checked, 
+                    cylinder: config.elements.types?.cylinder ?? true 
+                  } 
+                } 
+              })} 
+              style={{ accentColor: '#FFD700' }} 
+            />
+            🔴 球体
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', color: '#ccc' }}>
+            <input 
+              type="checkbox" 
+              checked={config.elements.types?.cylinder ?? true} 
+              onChange={e => onChange({ 
+                ...config, 
+                elements: { 
+                  ...config.elements, 
+                  types: { 
+                    box: config.elements.types?.box ?? true, 
+                    sphere: config.elements.types?.sphere ?? true, 
+                    cylinder: e.target.checked 
+                  } 
+                } 
+              })} 
+              style={{ accentColor: '#FFD700' }} 
+            />
+            🍬 糖果棒
+          </label>
+        </div>
+        
         {/* 自定义装饰图片 */}
         <p style={{ fontSize: '10px', color: '#888', margin: '8px 0 6px 0' }}>
           自定义装饰图片（仅支持 PNG）

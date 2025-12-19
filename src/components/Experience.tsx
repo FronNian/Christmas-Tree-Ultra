@@ -230,6 +230,7 @@ export const Experience = ({
                 state={sceneState} 
                 customImages={config.elements?.customImages}
                 customColors={config.elements?.colors}
+                decorationTypes={config.elements?.types}
                 count={safeConfig.elements.count}
                 easing={config.animation?.easing}
                 speed={config.animation?.speed}

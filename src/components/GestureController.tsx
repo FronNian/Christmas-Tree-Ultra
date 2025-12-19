@@ -39,7 +39,7 @@ const distance2D = (a: Landmark, b: Landmark): number => {
   return Math.sqrt(Math.pow(a.x - b.x, 2) + Math.pow(a.y - b.y, 2));
 };
 
-// 判断手指是否伸直
+// 判断手指是否伸直（放宽条件提高识别率）
 const isFingerExtended = (landmarks: Landmark[], tipIdx: number, pipIdx: number, mcpIdx: number): boolean => {
   const tip = landmarks[tipIdx];
   const pip = landmarks[pipIdx];
@@ -51,24 +51,31 @@ const isFingerExtended = (landmarks: Landmark[], tipIdx: number, pipIdx: number,
   const pipToWrist = distance(pip, wrist);
   const mcpToWrist = distance(mcp, wrist);
   
-  return tipToWrist > pipToWrist && tipToWrist > mcpToWrist * 1.2;
+  // 放宽条件：tipToWrist > pipToWrist * 0.95（原来是 >）
+  // 并且 tipToWrist > mcpToWrist * 1.1（原来是 1.2）
+  return tipToWrist > pipToWrist * 0.95 && tipToWrist > mcpToWrist * 1.1;
 };
 
 // 判断拇指是否伸直（拇指方向不同，需要特殊处理）
 const isThumbExtended = (landmarks: Landmark[]): boolean => {
   const thumbTip = landmarks[LANDMARKS.THUMB_TIP];
   const thumbIp = landmarks[LANDMARKS.THUMB_IP];
-
+  const thumbMcp = landmarks[LANDMARKS.THUMB_MCP];
   const indexMcp = landmarks[LANDMARKS.INDEX_MCP];
   
-  // 拇指尖到食指根部的距离
+  // 方法1：拇指尖到食指根部的距离
   const thumbToIndex = distance(thumbTip, indexMcp);
   const thumbIpToIndex = distance(thumbIp, indexMcp);
   
-  return thumbToIndex > thumbIpToIndex * 1.1;
+  // 方法2：拇指尖到拇指根部的距离（伸直时更长）
+  const thumbLength = distance(thumbTip, thumbMcp);
+  const thumbIpToMcp = distance(thumbIp, thumbMcp);
+  
+  // 两种方法任一满足即可（提高识别率）
+  return thumbToIndex > thumbIpToIndex * 1.05 || thumbLength > thumbIpToMcp * 1.3;
 };
 
-// 识别手势
+// 识别手势（优化版：放宽条件提高识别率）
 const recognizeGesture = (landmarks: Landmark[]): { gesture: GestureName; confidence: number } => {
   const thumbExtended = isThumbExtended(landmarks);
   const indexExtended = isFingerExtended(landmarks, LANDMARKS.INDEX_TIP, LANDMARKS.INDEX_PIP, LANDMARKS.INDEX_MCP);
@@ -77,52 +84,58 @@ const recognizeGesture = (landmarks: Landmark[]): { gesture: GestureName; confid
   const pinkyExtended = isFingerExtended(landmarks, LANDMARKS.PINKY_TIP, LANDMARKS.PINKY_PIP, LANDMARKS.PINKY_MCP);
   
   const extendedCount = [thumbExtended, indexExtended, middleExtended, ringExtended, pinkyExtended].filter(Boolean).length;
+  const fingerCount = [indexExtended, middleExtended, ringExtended, pinkyExtended].filter(Boolean).length;
   
-  // 捏合检测：拇指和食指靠近
+  // 捏合检测：拇指和食指靠近（放宽距离阈值）
   const thumbTip = landmarks[LANDMARKS.THUMB_TIP];
   const indexTip = landmarks[LANDMARKS.INDEX_TIP];
   const pinchDist = distance2D(thumbTip, indexTip);
-  const isPinching = pinchDist < 0.06 && middleExtended && ringExtended;
+  const isPinching = pinchDist < 0.08 && (middleExtended || ringExtended);
   
   if (isPinching) {
-    return { gesture: 'Pinch', confidence: 0.9 };
+    return { gesture: 'Pinch', confidence: 0.85 };
   }
   
-  // 👍 大拇指向上：只有拇指伸直，且拇指在上方
-  if (thumbExtended && !indexExtended && !middleExtended && !ringExtended && !pinkyExtended) {
-    const thumbTip = landmarks[LANDMARKS.THUMB_TIP];
-    const wrist = landmarks[LANDMARKS.WRIST];
-    if (thumbTip.y < wrist.y - 0.1) {
-      return { gesture: 'Thumb_Up', confidence: 0.85 };
-    }
-    if (thumbTip.y > wrist.y + 0.1) {
-      return { gesture: 'Thumb_Down', confidence: 0.85 };
-    }
+  // 🖐️ 张开手掌：大部分手指伸直（放宽到3根以上）
+  if (extendedCount >= 4 || (fingerCount >= 3 && thumbExtended)) {
+    return { gesture: 'Open_Palm', confidence: 0.9 };
   }
   
-  // ✊ 握拳：所有手指都弯曲
-  if (extendedCount === 0) {
+  // ✊ 握拳：所有手指都弯曲（放宽到最多1根伸直）
+  if (extendedCount <= 1 && !indexExtended && !middleExtended) {
     return { gesture: 'Closed_Fist', confidence: 0.9 };
   }
   
-  // ☝️ 食指向上：只有食指伸直
-  if (!thumbExtended && indexExtended && !middleExtended && !ringExtended && !pinkyExtended) {
-    return { gesture: 'Pointing_Up', confidence: 0.85 };
+  // 👍 大拇指向上/向下：拇指伸直，其他手指弯曲
+  if (thumbExtended && fingerCount <= 1) {
+    const wrist = landmarks[LANDMARKS.WRIST];
+    // 放宽 y 轴判断阈值
+    if (thumbTip.y < wrist.y - 0.05) {
+      return { gesture: 'Thumb_Up', confidence: 0.8 };
+    }
+    if (thumbTip.y > wrist.y + 0.05) {
+      return { gesture: 'Thumb_Down', confidence: 0.8 };
+    }
   }
   
-  // ✌️ 剪刀手：食指和中指伸直
-  if (!thumbExtended && indexExtended && middleExtended && !ringExtended && !pinkyExtended) {
+  // ☝️ 食指向上：食指伸直，其他弯曲（允许拇指状态不确定）
+  if (indexExtended && !middleExtended && !ringExtended && !pinkyExtended) {
+    return { gesture: 'Pointing_Up', confidence: 0.8 };
+  }
+  
+  // ✌️ 剪刀手：食指和中指伸直（放宽拇指条件）
+  if (indexExtended && middleExtended && !ringExtended && !pinkyExtended) {
     return { gesture: 'Victory', confidence: 0.85 };
   }
   
-  // 🤟 我爱你：拇指、食指、小指伸直
-  if (thumbExtended && indexExtended && !middleExtended && !ringExtended && pinkyExtended) {
-    return { gesture: 'ILoveYou', confidence: 0.85 };
+  // 🤟 我爱你：拇指、食指、小指伸直（放宽中指和无名指条件）
+  if (thumbExtended && indexExtended && pinkyExtended && !middleExtended) {
+    return { gesture: 'ILoveYou', confidence: 0.8 };
   }
   
-  // 🖐️ 张开手掌：所有手指伸直
-  if (extendedCount >= 4) {
-    return { gesture: 'Open_Palm', confidence: 0.9 };
+  // 备选：如果食指和小指伸直，中指弯曲，也算 ILoveYou
+  if (indexExtended && pinkyExtended && !middleExtended && !ringExtended) {
+    return { gesture: 'ILoveYou', confidence: 0.75 };
   }
   
   return { gesture: 'None', confidence: 0 };
@@ -194,8 +207,6 @@ export const GestureController = ({
         
         if (!vision) throw new Error('WASM load failed');
         if (!isActive) return;
-
-        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
         
         // HandLandmarker 模型
         const modelUrls = [
@@ -209,17 +220,35 @@ export const GestureController = ({
             landmarker = await HandLandmarker.createFromOptions(vision, {
               baseOptions: {
                 modelAssetPath: modelUrl,
-                delegate: isMobile ? 'CPU' : 'GPU'
+                // 移动端也尝试用 GPU，性能更好；如果失败会自动回退到 CPU
+                delegate: 'GPU'
               },
               runningMode: 'VIDEO',
               numHands: 1,
-              minHandDetectionConfidence: 0.5,
-              minHandPresenceConfidence: 0.5,
-              minTrackingConfidence: 0.5
+              // 降低检测阈值，提高识别率（牺牲一点精度换取更高召回率）
+              minHandDetectionConfidence: 0.4,
+              minHandPresenceConfidence: 0.4,
+              minTrackingConfidence: 0.4
             });
             break;
           } catch {
-            continue;
+            // GPU 失败时尝试 CPU
+            try {
+              landmarker = await HandLandmarker.createFromOptions(vision, {
+                baseOptions: {
+                  modelAssetPath: modelUrl,
+                  delegate: 'CPU'
+                },
+                runningMode: 'VIDEO',
+                numHands: 1,
+                minHandDetectionConfidence: 0.4,
+                minHandPresenceConfidence: 0.4,
+                minTrackingConfidence: 0.4
+              });
+              break;
+            } catch {
+              continue;
+            }
           }
         }
         
@@ -302,7 +331,7 @@ export const GestureController = ({
         const landmarks = results.landmarks[0] as Landmark[];
         const { gesture, confidence } = recognizeGesture(landmarks);
         
-        // 手势稳定性检测：需要连续几帧相同手势
+        // 手势稳定性检测：需要连续几帧相同手势（降低到2帧提高响应速度）
         if (gesture === lastGestureRef.current) {
           gestureHoldCountRef.current++;
         } else {
@@ -310,7 +339,8 @@ export const GestureController = ({
           lastGestureRef.current = gesture;
         }
         
-        const isStable = gestureHoldCountRef.current >= 3;
+        // 降低稳定性要求到2帧，提高响应速度
+        const isStable = gestureHoldCountRef.current >= 2;
         
         if (dbg) {
           callbacksRef.current.onStatus(`${gesture} (${(confidence * 100).toFixed(0)}%)`);
@@ -322,8 +352,8 @@ export const GestureController = ({
           y: (landmarks[LANDMARKS.WRIST].y + landmarks[LANDMARKS.MIDDLE_MCP].y) / 2
         };
 
-        // 处理手势
-        if (isStable && confidence > 0.7) {
+        // 处理手势（降低置信度阈值提高识别率）
+        if (isStable && confidence > 0.6) {
           // 捏合手势
           if (gesture === 'Pinch' && pinchCooldownRef.current === 0) {
             pinchCooldownRef.current = 30;

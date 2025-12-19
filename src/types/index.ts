@@ -97,6 +97,13 @@ export interface DecorationColors {
   candy2: string;     // 糖果棒颜色2
 }
 
+// 装饰类型开关配置
+export interface DecorationTypes {
+  box: boolean;       // 方块装饰（礼物盒）
+  sphere: boolean;    // 球体装饰
+  cylinder: boolean;  // 圆柱装饰（糖果棒）
+}
+
 // 彩灯颜色配置
 export interface LightColors {
   color1: string;
@@ -143,6 +150,7 @@ export interface SceneConfig {
   elements: { 
     enabled: boolean; 
     count: number;
+    types?: DecorationTypes;  // 装饰类型开关（默认全开）
     customImages?: {
       box?: string;      // 替换方块的 PNG 图片 (base64)
       sphere?: string;   // 替换球体的 PNG 图片 (base64)

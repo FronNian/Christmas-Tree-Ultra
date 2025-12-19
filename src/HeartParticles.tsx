@@ -1,6 +1,8 @@
 import { useRef, useMemo, useState, useEffect } from 'react';
 import { useFrame, useThree, useLoader } from '@react-three/fiber';
 import * as THREE from 'three';
+import { useEffect as useEffectReact } from 'react';
+void useEffectReact; // 避免重复导入警告
 
 interface HeartParticlesProps {
   visible: boolean;
@@ -117,6 +119,17 @@ const PhotoFrame = ({
   frameWidth?: number;
 }) => {
   const texture = useLoader(THREE.TextureLoader, photoUrl);
+  
+  // 优化纹理设置，提高清晰度
+  useEffect(() => {
+    if (texture) {
+      texture.minFilter = THREE.LinearFilter;
+      texture.magFilter = THREE.LinearFilter;
+      texture.generateMipmaps = false;
+      texture.anisotropy = 16;
+      texture.needsUpdate = true;
+    }
+  }, [texture]);
   
   if (!texture) return null;
   

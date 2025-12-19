@@ -2,7 +2,7 @@ import { useRef, useMemo, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { CONFIG } from '../../config';
-import type { SceneState, AnimationEasing, ScatterShape, GatherShape, DecorationColors } from '../../types';
+import type { SceneState, AnimationEasing, ScatterShape, GatherShape, DecorationColors, DecorationTypes } from '../../types';
 
 // 缓动函数
 const easingFunctions: Record<AnimationEasing, (t: number) => number> = {
@@ -134,6 +134,13 @@ const DEFAULT_COLORS: DecorationColors = {
   candy2: '#FFFFFF'     // 糖果白
 };
 
+// 默认装饰类型（全部启用）
+const DEFAULT_TYPES: DecorationTypes = {
+  box: true,
+  sphere: true,
+  cylinder: true
+};
+
 interface ChristmasElementsProps {
   state: SceneState;
   customImages?: {
@@ -142,6 +149,7 @@ interface ChristmasElementsProps {
     cylinder?: string;
   };
   customColors?: DecorationColors;
+  decorationTypes?: DecorationTypes;
   count?: number;
   easing?: AnimationEasing;
   speed?: number;
@@ -157,6 +165,7 @@ export const ChristmasElements = ({
   state, 
   customImages,
   customColors,
+  decorationTypes,
   count = CONFIG.counts.elements,
   easing = 'easeInOut', 
   speed = 1,
@@ -167,6 +176,24 @@ export const ChristmasElements = ({
 }: ChristmasElementsProps) => {
   const actualHeight = treeHeight ?? CONFIG.tree.height;
   const actualRadius = treeRadius ?? CONFIG.tree.radius;
+  
+  // 合并装饰类型配置
+  const types = useMemo(() => ({
+    ...DEFAULT_TYPES,
+    ...decorationTypes
+  }), [decorationTypes]);
+  
+  // 获取启用的装饰类型列表 (0=box, 1=sphere, 2=cylinder)
+  const enabledTypes = useMemo(() => {
+    const result: number[] = [];
+    if (types.box) result.push(0);
+    if (types.sphere) result.push(1);
+    if (types.cylinder) result.push(2);
+    // 如果全部关闭，默认启用球体
+    if (result.length === 0) result.push(1);
+    return result;
+  }, [types]);
+  
   // 合并自定义颜色
   const colors = useMemo(() => ({
     ...DEFAULT_COLORS,
@@ -215,7 +242,7 @@ export const ChristmasElements = ({
   const sphereGeometry = useMemo(() => new THREE.SphereGeometry(0.5, 16, 16), []);
   const caneGeometry = useMemo(() => new THREE.CylinderGeometry(0.15, 0.15, 1.2, 8), []);
 
-  // 基础数据（不依赖 scatterShape，只在 count 或 gatherShape 或 colors 或尺寸变化时重新生成）
+  // 基础数据（不依赖 scatterShape，只在 count 或 gatherShape 或 colors 或尺寸或类型变化时重新生成）
   const data = useMemo(() => {
     return new Array(count).fill(0).map((_, i) => {
       const targetPos = generateTargetPosition(i, actualHeight, actualRadius);
@@ -226,8 +253,13 @@ export const ChristmasElements = ({
       const r3 = seededRandom(i * 5 + 202);
       const r4 = seededRandom(i * 5 + 203);
       const r5 = seededRandom(i * 5 + 204);
+      const r6 = seededRandom(i * 5 + 205);
+      const r7 = seededRandom(i * 5 + 206);
 
-      const type = Math.floor(r1 * 3); // 0=box, 1=sphere, 2=cylinder
+      // 从启用的类型中选择（根据原始随机值映射到启用的类型）
+      const typeIndex = Math.floor(r1 * enabledTypes.length);
+      const type = enabledTypes[typeIndex];
+      
       let color;
       let scale = 1;
       if (type === 0) {
@@ -249,6 +281,12 @@ export const ChristmasElements = ({
         y: (r4 - 0.5) * 2.0,
         z: (r5 - 0.5) * 2.0
       };
+      
+      // 闪烁参数：飞机灯效果 - 大部分时间暗，突然闪一下
+      const twinkleInterval = 1.5 + r6 * 2.5; // 闪烁间隔 1.5-4秒
+      const twinklePhase = r7 * 10; // 随机相位偏移（秒），让闪烁不同步
+      const twinkleIntensity = 0.8 + r6 * 0.4; // 闪烁时的亮度 0.8-1.2
+      
       return {
         type,
         targetPos,
@@ -256,10 +294,16 @@ export const ChristmasElements = ({
         scale,
         gatherDelay,
         chaosRotation: new THREE.Euler(r3 * Math.PI, r4 * Math.PI, r5 * Math.PI),
-        rotationSpeed
+        rotationSpeed,
+        twinkleInterval,
+        twinklePhase,
+        twinkleIntensity
       };
     });
-  }, [count, gatherShape, decorationColors, colors, actualHeight, actualRadius]);
+  }, [count, gatherShape, decorationColors, colors, actualHeight, actualRadius, enabledTypes]);
+  
+  // 时间累计（用于闪烁动画）
+  const timeRef = useRef(0);
 
   // 初始化 chaos 位置
   useEffect(() => {
@@ -295,6 +339,11 @@ export const ChristmasElements = ({
 
   useFrame((_, delta) => {
     if (!groupRef.current) return;
+    
+    // 更新时间
+    timeRef.current += delta;
+    const time = timeRef.current;
+    
     const isFormed = state === 'FORMED';
     const targetProgress = isFormed ? 1 : 0;
     
@@ -341,14 +390,38 @@ export const ChristmasElements = ({
       // 使用缓动函数插值位置（从动画中的 chaos 位置到目标位置）
       child.position.lerpVectors(animatedChaosPos, objData.targetPos, elementT);
       
-      // 如果是精灵（图片），让它面向相机
+      // 计算闪烁：飞机灯效果 - 大部分时间暗，突然闪一下
+      // 使用 fmod 计算当前在闪烁周期中的位置
+      const cycleTime = (time + objData.twinklePhase) % objData.twinkleInterval;
+      // 闪烁持续时间很短（0.08秒），其余时间暗
+      const flashDuration = 0.08;
+      const isFlashing = cycleTime < flashDuration;
+      // 闪烁时快速亮起然后衰减
+      const flashProgress = isFlashing ? cycleTime / flashDuration : 0;
+      // 使用指数衰减让闪烁更锐利：快速亮起，快速暗下
+      const flashIntensity = isFlashing 
+        ? Math.pow(1 - flashProgress, 0.5) * objData.twinkleIntensity 
+        : 0;
+      
+      // 如果是精灵（图片），让它面向相机并更新闪烁
       if (child instanceof THREE.Sprite) {
         // Sprite 自动面向相机
+        const spriteMat = child.material as THREE.SpriteMaterial;
+        // 基础透明度 + 闪烁时的额外亮度
+        spriteMat.opacity = 0.85 + flashIntensity * 0.15;
       } else {
         // 普通 mesh 继续旋转
         child.rotation.x += delta * objData.rotationSpeed.x * 0.5;
         child.rotation.y += delta * objData.rotationSpeed.y * 0.5;
         child.rotation.z += delta * objData.rotationSpeed.z * 0.5;
+        
+        // 更新闪烁发光效果：平时暗，闪烁时突然亮
+        const mesh = child as THREE.Mesh;
+        const mat = mesh.material as THREE.MeshStandardMaterial;
+        if (mat && mat.emissiveIntensity !== undefined) {
+          // 基础发光很低，闪烁时突然变亮
+          mat.emissiveIntensity = 0.15 + flashIntensity;
+        }
       }
     });
   });
