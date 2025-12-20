@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { SceneConfig, GestureConfig, GestureAction, MusicConfig, AnimationEasing, ScatterShape, GatherShape, DecorationColors } from '../../types';
 import { PRESET_MUSIC } from '../../types';
 import { isMobile } from '../../utils/helpers';
@@ -53,6 +54,246 @@ const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({ title, icon, ch
         <div style={{ paddingTop: '8px' }}>
           {children}
         </div>
+      )}
+    </div>
+  );
+};
+
+// 预设颜色列表（精简为16色，5x3+1布局更紧凑）
+const PRESET_COLORS = [
+  '#FF0000', '#FF4500', '#FF1493', '#FFD700', '#FFA500',
+  '#00FF00', '#00FF88', '#2E7D32', '#00FFFF', '#1E90FF',
+  '#0000FF', '#9C27B0', '#8B00FF', '#FFFFFF', '#9E9E9E',
+  '#000000',
+];
+
+// 移动端友好的颜色选择器组件（使用预设颜色 + 手动输入）
+interface ColorPickerProps {
+  value: string;
+  onChange: (color: string) => void;
+  style?: React.CSSProperties;
+}
+
+const ColorPicker: React.FC<ColorPickerProps> = ({ value, onChange, style }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [inputValue, setInputValue] = useState(value);
+  const buttonRef = React.useRef<HTMLButtonElement>(null);
+  const popupRef = React.useRef<HTMLDivElement>(null);
+  const [popupPosition, setPopupPosition] = useState({ top: 0, left: 0 });
+  
+  // 同步外部值变化
+  React.useEffect(() => {
+    setInputValue(value);
+  }, [value]);
+  
+  // 计算弹出层位置
+  const calculatePosition = React.useCallback(() => {
+    if (!buttonRef.current) return;
+    
+    const rect = buttonRef.current.getBoundingClientRect();
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const pw = 160; // 弹出层固定宽度
+    const ph = 240; // 预估高度
+    
+    // 水平：优先左对齐按钮，超出则右对齐屏幕
+    let left = rect.left;
+    if (left + pw > vw - 10) {
+      left = vw - pw - 10;
+    }
+    if (left < 10) left = 10;
+    
+    // 垂直：优先向下，不够则向上
+    let top = rect.bottom + 4;
+    if (top + ph > vh - 10) {
+      top = rect.top - ph - 4;
+    }
+    if (top < 10) top = 10;
+    
+    setPopupPosition({ top, left });
+  }, []);
+  
+  // 打开时计算位置
+  React.useEffect(() => {
+    if (isOpen) {
+      calculatePosition();
+    }
+  }, [isOpen, calculatePosition]);
+  
+  const handleInputChange = (v: string) => {
+    setInputValue(v);
+    if (/^#[0-9A-Fa-f]{6}$/.test(v)) {
+      onChange(v);
+    }
+  };
+  
+  const handleColorSelect = (color: string) => {
+    onChange(color);
+    setInputValue(color);
+  };
+  
+  // 点击外部关闭
+  React.useEffect(() => {
+    if (!isOpen) return;
+    
+    const handleClickOutside = (e: MouseEvent | TouchEvent) => {
+      const target = e.target as Node;
+      const isOutsideButton = buttonRef.current && !buttonRef.current.contains(target);
+      const isOutsidePopup = popupRef.current && !popupRef.current.contains(target);
+      
+      if (isOutsideButton && isOutsidePopup) {
+        setIsOpen(false);
+      }
+    };
+    
+    // 延迟添加监听，避免立即触发
+    const timer = setTimeout(() => {
+      document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener('touchstart', handleClickOutside as EventListener);
+    }, 10);
+    
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('touchstart', handleClickOutside as EventListener);
+    };
+  }, [isOpen]);
+  
+  const viewportHeight = typeof window !== 'undefined' ? window.innerHeight : 667;
+  
+  return (
+    <div style={{ position: 'relative', ...style }}>
+      {/* 颜色预览按钮 */}
+      <button
+        ref={buttonRef}
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        style={{
+          width: '100%',
+          height: style?.height || '32px',
+          minHeight: '32px',
+          cursor: 'pointer',
+          borderRadius: '4px',
+          border: '2px solid rgba(255,255,255,0.3)',
+          background: value,
+          padding: 0,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center'
+        }}
+      >
+        <span style={{
+          fontSize: '9px',
+          color: '#fff',
+          textShadow: '0 0 3px #000, 0 0 3px #000',
+          fontWeight: 'bold'
+        }}>
+          {isOpen ? '关闭' : '选色'}
+        </span>
+      </button>
+      
+      {/* 颜色选择器弹出层 - 使用 Portal 渲染到 body */}
+      {isOpen && createPortal(
+        <div
+          ref={popupRef}
+          style={{
+            position: 'fixed',
+            top: `${popupPosition.top}px`,
+            left: `${popupPosition.left}px`,
+            width: '160px',
+            maxHeight: `${Math.min(260, viewportHeight - 20)}px`,
+            overflowY: 'auto',
+            zIndex: 10000,
+            padding: '8px',
+            background: 'rgba(20, 20, 20, 0.98)',
+            borderRadius: '8px',
+            boxShadow: '0 4px 20px rgba(0,0,0,0.6)',
+            border: '1px solid rgba(255,215,0,0.3)',
+          }}
+          onClick={e => e.stopPropagation()}
+          onTouchStart={e => e.stopPropagation()}
+        >
+          {/* 预设颜色网格 4x4 */}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(4, 1fr)',
+            gap: '6px',
+            marginBottom: '8px'
+          }}>
+            {PRESET_COLORS.map(color => (
+              <button
+                key={color}
+                type="button"
+                onClick={() => handleColorSelect(color)}
+                style={{
+                  width: '100%',
+                  aspectRatio: '1',
+                  background: color,
+                  border: value === color ? '2px solid #FFD700' : '1px solid rgba(255,255,255,0.2)',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  padding: 0,
+                  minHeight: '28px',
+                  boxShadow: value === color ? '0 0 6px rgba(255,215,0,0.5)' : 'none'
+                }}
+              />
+            ))}
+          </div>
+          
+          {/* 手动输入 */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            marginBottom: '8px'
+          }}>
+            <div style={{
+              width: '32px',
+              height: '32px',
+              borderRadius: '4px',
+              background: value,
+              border: '2px solid rgba(255,255,255,0.3)',
+              flexShrink: 0
+            }} />
+            <input
+              type="text"
+              value={inputValue}
+              onChange={e => handleInputChange(e.target.value.toUpperCase())}
+              placeholder="#FFFFFF"
+              style={{
+                flex: 1,
+                padding: '8px',
+                background: 'rgba(0,0,0,0.3)',
+                border: '1px solid rgba(255,255,255,0.2)',
+                borderRadius: '4px',
+                color: '#fff',
+                fontSize: '12px',
+                fontFamily: 'monospace',
+                width: '80%'
+              }}
+            />
+          </div>
+          
+          {/* 确定按钮 */}
+          <button
+            type="button"
+            onClick={() => setIsOpen(false)}
+            style={{
+              width: '100%',
+              padding: '8px',
+              background: '#FFD700',
+              border: 'none',
+              borderRadius: '4px',
+              color: '#000',
+              fontSize: '12px',
+              fontWeight: 'bold',
+              cursor: 'pointer'
+            }}
+          >
+            确定
+          </button>
+        </div>,
+        document.body
       )}
     </div>
   );
@@ -347,20 +588,16 @@ export const SettingsPanel = ({
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '10px' }}>
           <div>
             <span style={{ fontSize: '10px', color: '#888' }}>文字颜色</span>
-            <input
-              type="color"
+            <ColorPicker
               value={config.title?.color || '#FFD700'}
-              onChange={e => onChange({ ...config, title: { ...safeConfig.title, color: e.target.value } })}
-              style={{ width: '100%', height: '28px', cursor: 'pointer', border: 'none', borderRadius: '4px' }}
+              onChange={color => onChange({ ...config, title: { ...safeConfig.title, color } })}
             />
           </div>
           <div>
             <span style={{ fontSize: '10px', color: '#888' }}>发光颜色</span>
-            <input
-              type="color"
+            <ColorPicker
               value={config.title?.shadowColor || config.title?.color || '#FFD700'}
-              onChange={e => onChange({ ...config, title: { ...safeConfig.title, shadowColor: e.target.value } })}
-              style={{ width: '100%', height: '28px', cursor: 'pointer', border: 'none', borderRadius: '4px' }}
+              onChange={color => onChange({ ...config, title: { ...safeConfig.title, shadowColor: color } })}
             />
           </div>
         </div>
@@ -513,20 +750,16 @@ export const SettingsPanel = ({
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '10px' }}>
               <div>
                 <span style={{ fontSize: '10px', color: '#888' }}>聚合颜色</span>
-                <input
-                  type="color"
+                <ColorPicker
                   value={config.foliage.color || '#00FF88'}
-                  onChange={e => onChange({ ...config, foliage: { ...config.foliage, color: e.target.value } })}
-                  style={{ width: '100%', height: '28px', cursor: 'pointer', border: 'none', borderRadius: '4px' }}
+                  onChange={color => onChange({ ...config, foliage: { ...config.foliage, color } })}
                 />
               </div>
               <div>
                 <span style={{ fontSize: '10px', color: '#888' }}>散开颜色</span>
-                <input
-                  type="color"
+                <ColorPicker
                   value={config.foliage.chaosColor || '#004422'}
-                  onChange={e => onChange({ ...config, foliage: { ...config.foliage, chaosColor: e.target.value } })}
-                  style={{ width: '100%', height: '28px', cursor: 'pointer', border: 'none', borderRadius: '4px' }}
+                  onChange={color => onChange({ ...config, foliage: { ...config.foliage, chaosColor: color } })}
                 />
               </div>
             </div>
@@ -724,10 +957,9 @@ export const SettingsPanel = ({
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px' }}>
             {(['color1', 'color2', 'color3', 'color4'] as const).map((key, idx) => (
               <div key={key}>
-                <input
-                  type="color"
+                <ColorPicker
                   value={config.lights.colors?.[key] || ['#FF0000', '#00FF00', '#0000FF', '#FFFF00'][idx]}
-                  onChange={e => onChange({
+                  onChange={color => onChange({
                     ...config,
                     lights: {
                       ...config.lights,
@@ -736,11 +968,11 @@ export const SettingsPanel = ({
                         color2: config.lights.colors?.color2 || '#00FF00',
                         color3: config.lights.colors?.color3 || '#0000FF',
                         color4: config.lights.colors?.color4 || '#FFFF00',
-                        [key]: e.target.value
+                        [key]: color
                       }
                     }
                   })}
-                  style={{ width: '100%', height: '28px', cursor: 'pointer', border: 'none', borderRadius: '4px' }}
+                  style={{ height: '28px' }}
                 />
               </div>
             ))}
@@ -1100,95 +1332,87 @@ export const SettingsPanel = ({
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
             <div>
               <span style={{ fontSize: '10px', color: '#888' }}>主色</span>
-              <input
-                type="color"
+              <ColorPicker
                 value={config.elements.colors?.primary || DEFAULT_DECORATION_COLORS.primary}
-                onChange={e => onChange({
+                onChange={color => onChange({
                   ...config,
                   elements: { 
                     ...config.elements, 
                     colors: { 
                       ...DEFAULT_DECORATION_COLORS,
                       ...config.elements.colors, 
-                      primary: e.target.value 
+                      primary: color 
                     } 
                   }
                 })}
-                style={{ width: '100%', height: '28px', cursor: 'pointer', border: 'none', borderRadius: '4px' }}
               />
             </div>
             <div>
               <span style={{ fontSize: '10px', color: '#888' }}>次色</span>
-              <input
-                type="color"
+              <ColorPicker
                 value={config.elements.colors?.secondary || DEFAULT_DECORATION_COLORS.secondary}
-                onChange={e => onChange({
+                onChange={color => onChange({
                   ...config,
                   elements: { 
                     ...config.elements, 
                     colors: { 
                       ...DEFAULT_DECORATION_COLORS,
                       ...config.elements.colors, 
-                      secondary: e.target.value 
+                      secondary: color 
                     } 
                   }
                 })}
-                style={{ width: '100%', height: '28px', cursor: 'pointer', border: 'none', borderRadius: '4px' }}
               />
             </div>
             <div>
               <span style={{ fontSize: '10px', color: '#888' }}>强调色</span>
-              <input
-                type="color"
+              <ColorPicker
                 value={config.elements.colors?.accent || DEFAULT_DECORATION_COLORS.accent}
-                onChange={e => onChange({
+                onChange={color => onChange({
                   ...config,
                   elements: { 
                     ...config.elements, 
                     colors: { 
                       ...DEFAULT_DECORATION_COLORS,
                       ...config.elements.colors, 
-                      accent: e.target.value 
+                      accent: color 
                     } 
                   }
                 })}
-                style={{ width: '100%', height: '28px', cursor: 'pointer', border: 'none', borderRadius: '4px' }}
               />
             </div>
             <div>
               <span style={{ fontSize: '10px', color: '#888' }}>糖果色</span>
               <div style={{ display: 'flex', gap: '4px' }}>
-                <input
-                  type="color"
+                <ColorPicker
                   value={config.elements.colors?.candy1 || DEFAULT_DECORATION_COLORS.candy1}
-                  onChange={e => onChange({
+                  onChange={color => onChange({
                     ...config,
                     elements: { 
                       ...config.elements, 
                       colors: { 
                         ...DEFAULT_DECORATION_COLORS,
                         ...config.elements.colors, 
-                        candy1: e.target.value 
+                        candy1: color 
                       } 
                     }
                   })}
-                  style={{ flex: 1, height: '28px', cursor: 'pointer', border: 'none', borderRadius: '4px' }}
+                  style={{ flex: 1, height: '28px' }}
                 />
-                <input
-                  type="color"
+                <ColorPicker
                   value={config.elements.colors?.candy2 || DEFAULT_DECORATION_COLORS.candy2}
-                  onChange={e => onChange({
+                  onChange={color => onChange({
                     ...config,
                     elements: { 
                       ...config.elements, 
                       colors: { 
                         ...DEFAULT_DECORATION_COLORS,
                         ...config.elements.colors, 
-                        candy2: e.target.value 
+                        candy2: color 
                       } 
                     }
                   })}
-                  style={{ flex: 1, height: '28px', cursor: 'pointer', border: 'none', borderRadius: '4px' }}
+                  style={{ flex: 1, height: '28px' }}
                 />
               </div>
             </div>
@@ -1259,17 +1483,16 @@ export const SettingsPanel = ({
         {/* 相框颜色 */}
         <div style={{ marginTop: '10px' }}>
           <span style={{ fontSize: '10px', color: '#888' }}>相框颜色</span>
-          <input
-            type="color"
+          <ColorPicker
             value={config.photoOrnaments?.frameColor || '#FFFFFF'}
-            onChange={e => onChange({ 
+            onChange={color => onChange({ 
               ...config, 
               photoOrnaments: { 
                 ...config.photoOrnaments, 
-                frameColor: e.target.value 
+                frameColor: color 
               } 
             })}
-            style={{ width: '100%', height: '28px', cursor: 'pointer', border: 'none', borderRadius: '4px', marginTop: '4px' }}
+            style={{ marginTop: '4px' }}
           />
         </div>
         
@@ -1345,26 +1568,22 @@ export const SettingsPanel = ({
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '8px' }}>
               <div>
                 <span style={{ fontSize: '10px', color: '#888' }}>带子颜色</span>
-                <input
-                  type="color"
+                <ColorPicker
                   value={config.spiralRibbon?.color || '#FF2222'}
-                  onChange={e => onChange({
+                  onChange={color => onChange({
                     ...config,
-                    spiralRibbon: { ...config.spiralRibbon!, color: e.target.value }
+                    spiralRibbon: { ...config.spiralRibbon!, color }
                   })}
-                  style={{ width: '100%', height: '28px', cursor: 'pointer', border: 'none', borderRadius: '4px' }}
                 />
               </div>
               <div>
                 <span style={{ fontSize: '10px', color: '#888' }}>发光颜色</span>
-                <input
-                  type="color"
+                <ColorPicker
                   value={config.spiralRibbon?.glowColor || '#FF4444'}
-                  onChange={e => onChange({
+                  onChange={color => onChange({
                     ...config,
-                    spiralRibbon: { ...config.spiralRibbon!, glowColor: e.target.value }
+                    spiralRibbon: { ...config.spiralRibbon!, glowColor: color }
                   })}
-                  style={{ width: '100%', height: '28px', cursor: 'pointer', border: 'none', borderRadius: '4px' }}
                 />
               </div>
             </div>
@@ -1454,14 +1673,12 @@ export const SettingsPanel = ({
             {/* 颜色 */}
             <div style={{ marginTop: '8px' }}>
               <span style={{ fontSize: '10px', color: '#888' }}>流线颜色</span>
-              <input
-                type="color"
+              <ColorPicker
                 value={config.glowingStreaks?.color || '#FFD700'}
-                onChange={e => onChange({
+                onChange={color => onChange({
                   ...config,
-                  glowingStreaks: { ...config.glowingStreaks!, color: e.target.value }
+                  glowingStreaks: { ...config.glowingStreaks!, color }
                 })}
-                style={{ width: '100%', height: '28px', cursor: 'pointer', border: 'none', borderRadius: '4px' }}
               />
             </div>
             
@@ -1559,16 +1776,15 @@ export const SettingsPanel = ({
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '4px' }}>
             {[0, 1, 2, 3].map(idx => (
-              <input
+              <ColorPicker
                 key={idx}
-                type="color"
                 value={(config.giftPile?.colors || ['#D32F2F', '#FFD700', '#1976D2', '#2E7D32'])[idx]}
-                onChange={e => {
+                onChange={color => {
                   const newColors = [...(config.giftPile?.colors || ['#D32F2F', '#FFD700', '#1976D2', '#2E7D32'])];
-                  newColors[idx] = e.target.value;
+                  newColors[idx] = color;
                   onChange({ ...config, giftPile: { ...safeConfig.giftPile, colors: newColors } });
                 }}
-                style={{ width: '100%', height: '24px', cursor: 'pointer', border: 'none', borderRadius: '4px' }}
+                style={{ height: '24px' }}
               />
             ))}
           </div>
@@ -1598,16 +1814,15 @@ export const SettingsPanel = ({
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '4px' }}>
             {[0, 1, 2, 3, 4].map(idx => (
-              <input
+              <ColorPicker
                 key={idx}
-                type="color"
                 value={(config.ribbons?.colors || ['#FFD700', '#D32F2F', '#ECEFF1', '#FF69B4', '#00CED1'])[idx]}
-                onChange={e => {
+                onChange={color => {
                   const newColors = [...(config.ribbons?.colors || ['#FFD700', '#D32F2F', '#ECEFF1', '#FF69B4', '#00CED1'])];
-                  newColors[idx] = e.target.value;
+                  newColors[idx] = color;
                   onChange({ ...config, ribbons: { ...safeConfig.ribbons, colors: newColors } });
                 }}
-                style={{ width: '100%', height: '24px', cursor: 'pointer', border: 'none', borderRadius: '4px' }}
+                style={{ height: '24px' }}
               />
             ))}
           </div>
@@ -1648,11 +1863,10 @@ export const SettingsPanel = ({
         <input type="range" min="0.1" max="1" step="0.05" value={safeConfig.fog.opacity} onChange={e => onChange({ ...config, fog: { ...safeConfig.fog, opacity: Number(e.target.value) } })} style={sliderStyle} />
         <div style={{ marginTop: '8px' }}>
           <span style={{ fontSize: '10px', color: '#888' }}>雾气颜色</span>
-          <input
-            type="color"
+          <ColorPicker
             value={config.fog?.color || '#ffffff'}
-            onChange={e => onChange({ ...config, fog: { ...safeConfig.fog, color: e.target.value } })}
-            style={{ width: '100%', height: '28px', cursor: 'pointer', border: 'none', borderRadius: '4px', marginTop: '4px' }}
+            onChange={color => onChange({ ...config, fog: { ...safeConfig.fog, color } })}
+            style={{ marginTop: '4px' }}
           />
         </div>
       </CollapsibleSection>
@@ -1776,11 +1990,10 @@ export const SettingsPanel = ({
       <CollapsibleSection title="场景背景" icon={<Palette size={14} />}>
         <div style={{ marginTop: '4px' }}>
           <span style={{ fontSize: '10px', color: '#888' }}>背景颜色</span>
-          <input
-            type="color"
+          <ColorPicker
             value={config.background?.color || '#000300'}
-            onChange={e => onChange({ ...config, background: { color: e.target.value } })}
-            style={{ width: '100%', height: '28px', cursor: 'pointer', border: 'none', borderRadius: '4px', marginTop: '4px' }}
+            onChange={color => onChange({ ...config, background: { color } })}
+            style={{ marginTop: '4px' }}
           />
         </div>
         <p style={{ fontSize: '9px', color: '#666', margin: '4px 0 0 0' }}>
@@ -1797,11 +2010,9 @@ export const SettingsPanel = ({
         {/* 爱心颜色 */}
         <div>
           <span style={{ fontSize: '10px', color: '#888' }}>爱心颜色</span>
-          <input
-            type="color"
+          <ColorPicker
             value={config.heartEffect?.color || '#FF1493'}
-            onChange={e => onChange({ ...config, heartEffect: { ...config.heartEffect, color: e.target.value } })}
-            style={{ width: '100%', height: '28px', cursor: 'pointer', border: 'none', borderRadius: '4px' }}
+            onChange={color => onChange({ ...config, heartEffect: { ...config.heartEffect, color } })}
           />
         </div>
         
@@ -1885,18 +2096,16 @@ export const SettingsPanel = ({
           
           <div style={{ marginTop: '8px' }}>
             <span style={{ fontSize: '10px', color: '#888' }}>相框颜色</span>
-            <input
-              type="color"
+            <ColorPicker
               value={config.heartEffect?.frameColor || '#FFFFFF'}
-              onChange={e => onChange({ 
+              onChange={color => onChange({ 
                 ...config, 
                 heartEffect: { 
                   ...config.heartEffect, 
                   color: config.heartEffect?.color || '#FF1493',
-                  frameColor: e.target.value 
+                  frameColor: color 
                 } 
               })}
-              style={{ width: '100%', height: '28px', cursor: 'pointer', border: 'none', borderRadius: '4px' }}
             />
           </div>
         </div>
@@ -1926,10 +2135,9 @@ export const SettingsPanel = ({
             <>
               <div style={{ marginTop: '8px' }}>
                 <span style={{ fontSize: '10px', color: '#888' }}>流光颜色</span>
-                <input
-                  type="color"
+                <ColorPicker
                   value={config.heartEffect?.glowTrail?.color || config.heartEffect?.color || '#FF1493'}
-                  onChange={e => onChange({ 
+                  onChange={color => onChange({ 
                     ...config, 
                     heartEffect: { 
                       ...config.heartEffect, 
@@ -1937,11 +2145,10 @@ export const SettingsPanel = ({
                       glowTrail: { 
                         ...config.heartEffect?.glowTrail, 
                         enabled: config.heartEffect?.glowTrail?.enabled ?? true,
-                        color: e.target.value 
+                        color 
                       } 
                     } 
                   })}
-                  style={{ width: '100%', height: '28px', cursor: 'pointer', border: 'none', borderRadius: '4px' }}
                 />
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '8px' }}>
@@ -2046,18 +2253,16 @@ export const SettingsPanel = ({
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '8px' }}>
                 <div>
                   <span style={{ fontSize: '10px', color: '#888' }}>文字颜色</span>
-                  <input
-                    type="color"
+                  <ColorPicker
                     value={config.heartEffect?.bottomTextColor || '#FFD700'}
-                    onChange={e => onChange({ 
+                    onChange={color => onChange({ 
                       ...config, 
                       heartEffect: { 
                         ...config.heartEffect, 
                         color: config.heartEffect?.color || '#FF1493',
-                        bottomTextColor: e.target.value 
+                        bottomTextColor: color 
                       } 
                     })}
-                    style={{ width: '100%', height: '28px', cursor: 'pointer', border: 'none', borderRadius: '4px' }}
                   />
                 </div>
                 <div>
@@ -2094,11 +2299,9 @@ export const SettingsPanel = ({
         {/* 文字颜色 */}
         <div>
           <span style={{ fontSize: '10px', color: '#888' }}>文字颜色</span>
-          <input
-            type="color"
+          <ColorPicker
             value={config.textEffect?.color || '#FFD700'}
-            onChange={e => onChange({ ...config, textEffect: { ...config.textEffect, color: e.target.value } })}
-            style={{ width: '100%', height: '28px', cursor: 'pointer', border: 'none', borderRadius: '4px' }}
+            onChange={color => onChange({ ...config, textEffect: { ...config.textEffect, color } })}
           />
         </div>
         

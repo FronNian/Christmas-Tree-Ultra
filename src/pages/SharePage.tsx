@@ -141,8 +141,7 @@ export default function SharePage({ shareId }: SharePageProps) {
     shareData?.photos?.length || 0,
     handleTimelineComplete,
     configuredTexts,
-    heartPhotoInterval,
-    textSwitchIntervalMs
+    heartPhotoInterval
   );
 
   // 监听全屏状态变化

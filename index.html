@@ -18,7 +18,7 @@
     <!-- 移动端调试工具 vConsole (仅开发环境) -->
     <script>
       // 仅在开发环境 + 移动端启用 vConsole
-      if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
+      if (location.hostname === 'localhost' || location.hostname === '127.0.0.1' || location.hostname === '192.168.3.106') {
         if (/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)) {
           var script = document.createElement('script');
           script.src = 'https://unpkg.com/vconsole@latest/dist/vconsole.min.js';

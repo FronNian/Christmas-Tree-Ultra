@@ -40,9 +40,8 @@ export function useTimeline(
   config: TimelineConfig | undefined,
   totalPhotos: number,
   onComplete?: () => void,
-  configuredTexts?: string[],
-  photoInterval: number = 3000,
-  textSwitchInterval: number = 3000
+  _configuredTexts?: string[], // 保留参数以保持 API 兼容性，但不再使用
+  photoInterval: number = 3000
 ): UseTimelineReturn {
   const [state, setState] = useState<TimelineState>({
     isPlaying: false,
@@ -54,9 +53,6 @@ export function useTimeline(
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const progressRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const photoCounterRef = useRef(0);
-  const configuredTextsRef = useRef(configuredTexts);
-  
-  configuredTextsRef.current = configuredTexts;
 
   // 清理定时器
   const clearTimers = useCallback(() => {
@@ -82,6 +78,7 @@ export function useTimeline(
 
   // 计算步骤的实际持续时间
   const getStepDuration = useCallback((step: TimelineStep): number => {
+    // 爱心步骤：如果显示照片，需要足够时间展示所有照片
     if (step.type === 'heart' && step.showPhoto && totalPhotos > 0) {
       const gatherTime = 2000;
       const slideTime = 600;
@@ -93,14 +90,10 @@ export function useTimeline(
       return Math.max(step.duration, calculatedDuration);
     }
     
-    const texts = configuredTextsRef.current;
-    if (step.type === 'text' && texts && texts.length > 1) {
-      // 文字步骤持续时间 = 文字数量 * 切换间隔
-      return texts.length * textSwitchInterval;
-    }
-    
+    // 文字步骤：直接使用用户设置的 duration
+    // 不再根据文字数量自动计算，让用户完全控制持续时间
     return step.duration;
-  }, [totalPhotos, photoInterval, textSwitchInterval]);
+  }, [totalPhotos, photoInterval]);
 
   // 播放指定步骤
   const playStep = useCallback((index: number) => {

@@ -283,8 +283,7 @@ export default function GrandTreeApp() {
     uploadedPhotos.length,
     handleTimelineComplete,
     configuredTexts,
-    heartPhotoInterval,
-    textSwitchIntervalMs
+    heartPhotoInterval
   );
 
   // 故事线步骤 - 简化版：文字特效只显示第一条，不轮播
