@@ -195,12 +195,16 @@ export default function GrandTreeApp() {
   const configuredTexts = sceneConfig.gestureTexts || 
     (sceneConfig.gestureText ? [sceneConfig.gestureText] : ['MERRY CHRISTMAS']);
 
+  // 获取照片轮播间隔配置
+  const heartPhotoInterval = (sceneConfig.heartEffect as { photoInterval?: number } | undefined)?.photoInterval || 3000;
+
   // 时间轴播放器
   const timeline = useTimeline(
     sceneConfig.timeline,
     uploadedPhotos.length,
     handleTimelineComplete,
-    configuredTexts
+    configuredTexts,
+    heartPhotoInterval
   );
 
   // 处理图片上传

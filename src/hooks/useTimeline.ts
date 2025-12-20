@@ -44,7 +44,8 @@ export function useTimeline(
   config: TimelineConfig | undefined,
   totalPhotos: number,
   onComplete?: () => void,
-  configuredTexts?: string[]
+  configuredTexts?: string[],
+  photoInterval: number = 3000 // 照片切换间隔，默认3秒
 ): UseTimelineReturn {
   const [state, setState] = useState<TimelineState>({
     isPlaying: false,
@@ -81,6 +82,28 @@ export function useTimeline(
     return idx;
   }, [totalPhotos]);
 
+  // 计算步骤的实际持续时间
+  const getStepDuration = useCallback((step: TimelineStep): number => {
+    // 如果是爱心步骤且显示照片，根据照片数量动态计算时间
+    if (step.type === 'heart' && step.showPhoto && totalPhotos > 0) {
+      // 粒子聚合时间(约2秒) + 每张照片显示时间 + 滑动动画时间 + 最后一张额外显示时间
+      const gatherTime = 2000; // 粒子聚合时间
+      const slideTime = 600; // 每次滑动动画时间
+      const lastPhotoExtraTime = 1000; // 最后一张照片额外显示时间
+      
+      // 总时间 = 聚合时间 + (照片数量 * 每张显示时间) + ((照片数量-1) * 滑动时间) + 额外时间
+      const calculatedDuration = gatherTime + 
+        (totalPhotos * photoInterval) + 
+        ((totalPhotos - 1) * slideTime) + 
+        lastPhotoExtraTime;
+      
+      // 使用计算的时间，但至少要满足用户设置的 duration
+      return Math.max(step.duration, calculatedDuration);
+    }
+    
+    return step.duration;
+  }, [totalPhotos, photoInterval]);
+
   // 播放指定步骤
   const playStep = useCallback((index: number) => {
     // 预览时不检查 enabled，只检查步骤有效性
@@ -99,6 +122,8 @@ export function useTimeline(
 
     const step = config.steps[index];
     const delay = step.delay || 0;
+    // 使用动态计算的持续时间
+    const actualDuration = getStepDuration(step);
 
     // 设置当前步骤
     setState(prev => ({
@@ -118,7 +143,7 @@ export function useTimeline(
       const startTime = Date.now();
       progressRef.current = setInterval(() => {
         const elapsed = Date.now() - startTime;
-        const progress = Math.min(1, elapsed / step.duration);
+        const progress = Math.min(1, elapsed / actualDuration);
         setState(prev => ({ ...prev, progress }));
         
         if (progress >= 1) {
@@ -143,7 +168,7 @@ export function useTimeline(
         }
       }, 50);
     }, delay);
-  }, [config, clearTimers, getPhotoIndex, onComplete]);
+  }, [config, clearTimers, getPhotoIndex, getStepDuration, onComplete]);
 
   // 播放控制
   const play = useCallback(() => {

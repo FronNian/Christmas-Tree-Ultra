@@ -115,6 +115,9 @@ export default function SharePage({ shareId }: SharePageProps) {
   const configuredTexts = sceneConfig.gestureTexts || 
     (sceneConfig.gestureText ? [sceneConfig.gestureText] : ['MERRY CHRISTMAS']);
 
+  // 获取照片轮播间隔配置
+  const heartPhotoInterval = (sceneConfig.heartEffect as { photoInterval?: number } | undefined)?.photoInterval || 3000;
+
   // 时间轴完成回调
   const handleTimelineComplete = useCallback(() => {
     setSceneState('FORMED');
@@ -125,7 +128,8 @@ export default function SharePage({ shareId }: SharePageProps) {
     sceneConfig.timeline,
     shareData?.photos?.length || 0,
     handleTimelineComplete,
-    configuredTexts
+    configuredTexts,
+    heartPhotoInterval
   );
 
   // 监听全屏状态变化
