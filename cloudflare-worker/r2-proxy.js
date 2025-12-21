@@ -76,8 +76,9 @@ function validateShareData(data) {
         const photo = data.photos[i];
         if (typeof photo !== 'string') {
           errors.push(`Photo ${i} is not a string`);
-        } else if (!photo.startsWith('data:image/')) {
-          errors.push(`Photo ${i} is not a valid data URL`);
+        } else if (photo.length > 0 && !photo.startsWith('data:image/') && !photo.startsWith('http')) {
+          // 允许空字符串、data:image/ 开头的 base64、或 http(s) URL
+          errors.push(`Photo ${i} is not a valid data URL or URL`);
         } else if (photo.length > 10 * 1024 * 1024) {
           errors.push(`Photo ${i} is too large`);
         }
@@ -85,8 +86,11 @@ function validateShareData(data) {
     }
   }
   
-  if (data.message && (typeof data.message !== 'string' || data.message.length > 200)) {
-    errors.push('Message too long (max 200 chars)');
+  if (data.message && typeof data.message !== 'string') {
+    errors.push('Message must be a string');
+  } else if (data.message && data.message.length > 500) {
+    // 放宽消息长度限制到 500 字符
+    errors.push('Message too long (max 500 chars)');
   }
   
   if (data.config && typeof data.config !== 'object') {
