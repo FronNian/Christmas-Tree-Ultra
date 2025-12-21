@@ -1,18 +1,9 @@
-import { useRef, useEffect } from 'react';
-import { HandLandmarker, FilesetResolver, DrawingUtils } from '@mediapipe/tasks-vision';
-
-// 手部关键点索引
-const LANDMARKS = {
-  WRIST: 0,
-  THUMB_CMC: 1, THUMB_MCP: 2, THUMB_IP: 3, THUMB_TIP: 4,
-  INDEX_MCP: 5, INDEX_PIP: 6, INDEX_DIP: 7, INDEX_TIP: 8,
-  MIDDLE_MCP: 9, MIDDLE_PIP: 10, MIDDLE_DIP: 11, MIDDLE_TIP: 12,
-  RING_MCP: 13, RING_PIP: 14, RING_DIP: 15, RING_TIP: 16,
-  PINKY_MCP: 17, PINKY_PIP: 18, PINKY_DIP: 19, PINKY_TIP: 20,
-};
+import { useRef, useEffect, useCallback } from 'react';
+import { FilesetResolver, GestureRecognizer, DrawingUtils } from '@mediapipe/tasks-vision';
+import type { NormalizedLandmark } from '@mediapipe/tasks-vision';
 
 // 手势类型
-type GestureName = 
+type GestureName =
   | 'None'
   | 'Open_Palm'
   | 'Closed_Fist'
@@ -23,124 +14,6 @@ type GestureName =
   | 'ILoveYou'
   | 'Pinch';
 
-interface Landmark {
-  x: number;
-  y: number;
-  z: number;
-}
-
-// 计算两点距离
-const distance = (a: Landmark, b: Landmark): number => {
-  return Math.sqrt(Math.pow(a.x - b.x, 2) + Math.pow(a.y - b.y, 2) + Math.pow(a.z - b.z, 2));
-};
-
-// 计算 2D 距离（忽略 z）
-const distance2D = (a: Landmark, b: Landmark): number => {
-  return Math.sqrt(Math.pow(a.x - b.x, 2) + Math.pow(a.y - b.y, 2));
-};
-
-// 判断手指是否伸直（放宽条件提高识别率）
-const isFingerExtended = (landmarks: Landmark[], tipIdx: number, pipIdx: number, mcpIdx: number): boolean => {
-  const tip = landmarks[tipIdx];
-  const pip = landmarks[pipIdx];
-  const mcp = landmarks[mcpIdx];
-  const wrist = landmarks[LANDMARKS.WRIST];
-  
-  // 指尖到手腕的距离 > PIP到手腕的距离，说明手指伸直
-  const tipToWrist = distance(tip, wrist);
-  const pipToWrist = distance(pip, wrist);
-  const mcpToWrist = distance(mcp, wrist);
-  
-  // 放宽条件：tipToWrist > pipToWrist * 0.95（原来是 >）
-  // 并且 tipToWrist > mcpToWrist * 1.1（原来是 1.2）
-  return tipToWrist > pipToWrist * 0.95 && tipToWrist > mcpToWrist * 1.1;
-};
-
-// 判断拇指是否伸直（拇指方向不同，需要特殊处理）
-const isThumbExtended = (landmarks: Landmark[]): boolean => {
-  const thumbTip = landmarks[LANDMARKS.THUMB_TIP];
-  const thumbIp = landmarks[LANDMARKS.THUMB_IP];
-  const thumbMcp = landmarks[LANDMARKS.THUMB_MCP];
-  const indexMcp = landmarks[LANDMARKS.INDEX_MCP];
-  
-  // 方法1：拇指尖到食指根部的距离
-  const thumbToIndex = distance(thumbTip, indexMcp);
-  const thumbIpToIndex = distance(thumbIp, indexMcp);
-  
-  // 方法2：拇指尖到拇指根部的距离（伸直时更长）
-  const thumbLength = distance(thumbTip, thumbMcp);
-  const thumbIpToMcp = distance(thumbIp, thumbMcp);
-  
-  // 两种方法任一满足即可（提高识别率）
-  return thumbToIndex > thumbIpToIndex * 1.05 || thumbLength > thumbIpToMcp * 1.3;
-};
-
-// 识别手势（优化版：放宽条件提高识别率）
-const recognizeGesture = (landmarks: Landmark[]): { gesture: GestureName; confidence: number } => {
-  const thumbExtended = isThumbExtended(landmarks);
-  const indexExtended = isFingerExtended(landmarks, LANDMARKS.INDEX_TIP, LANDMARKS.INDEX_PIP, LANDMARKS.INDEX_MCP);
-  const middleExtended = isFingerExtended(landmarks, LANDMARKS.MIDDLE_TIP, LANDMARKS.MIDDLE_PIP, LANDMARKS.MIDDLE_MCP);
-  const ringExtended = isFingerExtended(landmarks, LANDMARKS.RING_TIP, LANDMARKS.RING_PIP, LANDMARKS.RING_MCP);
-  const pinkyExtended = isFingerExtended(landmarks, LANDMARKS.PINKY_TIP, LANDMARKS.PINKY_PIP, LANDMARKS.PINKY_MCP);
-  
-  const extendedCount = [thumbExtended, indexExtended, middleExtended, ringExtended, pinkyExtended].filter(Boolean).length;
-  const fingerCount = [indexExtended, middleExtended, ringExtended, pinkyExtended].filter(Boolean).length;
-  
-  // 捏合检测：拇指和食指靠近（放宽距离阈值）
-  const thumbTip = landmarks[LANDMARKS.THUMB_TIP];
-  const indexTip = landmarks[LANDMARKS.INDEX_TIP];
-  const pinchDist = distance2D(thumbTip, indexTip);
-  const isPinching = pinchDist < 0.08 && (middleExtended || ringExtended);
-  
-  if (isPinching) {
-    return { gesture: 'Pinch', confidence: 0.85 };
-  }
-  
-  // 🖐️ 张开手掌：大部分手指伸直（放宽到3根以上）
-  if (extendedCount >= 4 || (fingerCount >= 3 && thumbExtended)) {
-    return { gesture: 'Open_Palm', confidence: 0.9 };
-  }
-  
-  // ✊ 握拳：所有手指都弯曲（放宽到最多1根伸直）
-  if (extendedCount <= 1 && !indexExtended && !middleExtended) {
-    return { gesture: 'Closed_Fist', confidence: 0.9 };
-  }
-  
-  // 👍 大拇指向上/向下：拇指伸直，其他手指弯曲
-  if (thumbExtended && fingerCount <= 1) {
-    const wrist = landmarks[LANDMARKS.WRIST];
-    // 放宽 y 轴判断阈值
-    if (thumbTip.y < wrist.y - 0.05) {
-      return { gesture: 'Thumb_Up', confidence: 0.8 };
-    }
-    if (thumbTip.y > wrist.y + 0.05) {
-      return { gesture: 'Thumb_Down', confidence: 0.8 };
-    }
-  }
-  
-  // ☝️ 食指向上：食指伸直，其他弯曲（允许拇指状态不确定）
-  if (indexExtended && !middleExtended && !ringExtended && !pinkyExtended) {
-    return { gesture: 'Pointing_Up', confidence: 0.8 };
-  }
-  
-  // ✌️ 剪刀手：食指和中指伸直（放宽拇指条件）
-  if (indexExtended && middleExtended && !ringExtended && !pinkyExtended) {
-    return { gesture: 'Victory', confidence: 0.85 };
-  }
-  
-  // 🤟 我爱你：拇指、食指、小指伸直（放宽中指和无名指条件）
-  if (thumbExtended && indexExtended && pinkyExtended && !middleExtended) {
-    return { gesture: 'ILoveYou', confidence: 0.8 };
-  }
-  
-  // 备选：如果食指和小指伸直，中指弯曲，也算 ILoveYou
-  if (indexExtended && pinkyExtended && !middleExtended && !ringExtended) {
-    return { gesture: 'ILoveYou', confidence: 0.75 };
-  }
-  
-  return { gesture: 'None', confidence: 0 };
-};
-
 interface GestureControllerProps {
   onGesture: (gesture: string) => void;
   onMove: (speed: number) => void;
@@ -149,7 +22,8 @@ interface GestureControllerProps {
   enabled: boolean;
   onPinch?: (pos: { x: number; y: number }) => void;
   onPalmMove?: (deltaX: number, deltaY: number) => void;
-  onPalmVertical?: (y: number) => void; // 手掌垂直位置 (0-1, 0=顶部, 1=底部)
+  onPalmVertical?: (y: number) => void;
+  onZoom?: (delta: number) => void; // 新增：缩放控制
   isPhotoSelected: boolean;
 }
 
@@ -162,19 +36,82 @@ export const GestureController = ({
   onPinch,
   onPalmMove,
   onPalmVertical,
-  isPhotoSelected
+  onZoom,
+  isPhotoSelected,
 }: GestureControllerProps) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  
+
   // 追踪状态
   const lastPalmPosRef = useRef<{ x: number; y: number } | null>(null);
-  const lastGestureRef = useRef<GestureName>('None');
-  const gestureHoldCountRef = useRef(0);
-  const pinchCooldownRef = useRef(0);
+  const lastVideoTimeRef = useRef<number>(-1);
+  const gestureStreakRef = useRef<{ name: string | null; count: number }>({
+    name: null,
+    count: 0,
+  });
+  const pinchCooldownRef = useRef<number>(0);
+  const lastFrameTimeRef = useRef<number>(0);
 
-  const callbacksRef = useRef({ onGesture, onMove, onStatus, debugMode, onPinch, onPalmMove, onPalmVertical, isPhotoSelected });
-  callbacksRef.current = { onGesture, onMove, onStatus, debugMode, onPinch, onPalmMove, onPalmVertical, isPhotoSelected };
+  // 旋转加速度（物理模拟）
+  const rotationBoostRef = useRef<number>(0);
+  // 手掌尺寸追踪（用于缩放）
+  const lastHandScaleRef = useRef<number | null>(null);
+
+  // 使用 ref 存储回调，避免 effect 重新运行
+  const callbacksRef = useRef({
+    onGesture,
+    onMove,
+    onStatus,
+    debugMode,
+    onPinch,
+    onPalmMove,
+    onPalmVertical,
+    onZoom,
+    isPhotoSelected,
+  });
+  callbacksRef.current = {
+    onGesture,
+    onMove,
+    onStatus,
+    debugMode,
+    onPinch,
+    onPalmMove,
+    onPalmVertical,
+    onZoom,
+    isPhotoSelected,
+  };
+
+  // 判断手指是否伸直
+  const isExtended = useCallback(
+    (
+      landmarks: NormalizedLandmark[],
+      tipIdx: number,
+      mcpIdx: number,
+      wrist: NormalizedLandmark
+    ): boolean => {
+      const tipDist = Math.hypot(
+        landmarks[tipIdx].x - wrist.x,
+        landmarks[tipIdx].y - wrist.y
+      );
+      const mcpDist = Math.hypot(
+        landmarks[mcpIdx].x - wrist.x,
+        landmarks[mcpIdx].y - wrist.y
+      );
+      return tipDist > mcpDist * 1.25;
+    },
+    []
+  );
+
+  // 判断是否捏合
+  const isPinching = useCallback((landmarks: NormalizedLandmark[]): boolean => {
+    const thumbTip = landmarks[4];
+    const indexTip = landmarks[8];
+    const distance = Math.hypot(
+      thumbTip.x - indexTip.x,
+      thumbTip.y - indexTip.y
+    );
+    return distance < 0.06;
+  }, []);
 
   useEffect(() => {
     if (!enabled) {
@@ -182,233 +119,387 @@ export const GestureController = ({
       return;
     }
 
-    let handLandmarker: HandLandmarker | null = null;
+    let recognizer: GestureRecognizer | null = null;
     let requestRef: number;
     let isActive = true;
 
     const setup = async () => {
       callbacksRef.current.onStatus('LOADING AI...');
+
       try {
-        const wasmUrls = [
-          '/wasm',
-          'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm',
-          'https://unpkg.com/@mediapipe/tasks-vision@0.10.3/wasm',
-        ];
-        
-        let vision = null;
-        for (const url of wasmUrls) {
-          try {
-            vision = await FilesetResolver.forVisionTasks(url);
-            break;
-          } catch {
-            continue;
-          }
-        }
-        
-        if (!vision) throw new Error('WASM load failed');
-        if (!isActive) return;
-        
-        // HandLandmarker 模型
-        const modelUrls = [
-          '/models/hand_landmarker.task',
-          'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
-        ];
-        
-        let landmarker = null;
-        for (const modelUrl of modelUrls) {
-          try {
-            landmarker = await HandLandmarker.createFromOptions(vision, {
-              baseOptions: {
-                modelAssetPath: modelUrl,
-                // 移动端也尝试用 GPU，性能更好；如果失败会自动回退到 CPU
-                delegate: 'GPU'
-              },
-              runningMode: 'VIDEO',
-              numHands: 1,
-              // 降低检测阈值，提高识别率（牺牲一点精度换取更高召回率）
-              minHandDetectionConfidence: 0.4,
-              minHandPresenceConfidence: 0.4,
-              minTrackingConfidence: 0.4
-            });
-            break;
-          } catch {
-            // GPU 失败时尝试 CPU
+        // 并行加载：摄像头 + MediaPipe
+        const streamPromise = navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: 'user',
+            width: { ideal: 320 },
+            height: { ideal: 240 },
+            frameRate: { ideal: 30 },
+          },
+          audio: false,
+        });
+
+        const recognizerPromise = (async () => {
+          const wasmUrls = [
+            '/wasm',
+            'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm',
+          ];
+
+          let vision = null;
+          for (const url of wasmUrls) {
             try {
-              landmarker = await HandLandmarker.createFromOptions(vision, {
-                baseOptions: {
-                  modelAssetPath: modelUrl,
-                  delegate: 'CPU'
-                },
-                runningMode: 'VIDEO',
-                numHands: 1,
-                minHandDetectionConfidence: 0.4,
-                minHandPresenceConfidence: 0.4,
-                minTrackingConfidence: 0.4
-              });
+              vision = await FilesetResolver.forVisionTasks(url);
               break;
             } catch {
               continue;
             }
           }
-        }
-        
-        if (!landmarker) throw new Error('Model load failed');
-        handLandmarker = landmarker;
-        if (!isActive) return;
 
-        callbacksRef.current.onStatus('REQUESTING CAMERA...');
+          if (!vision) throw new Error('WASM load failed');
 
-        if (navigator.mediaDevices?.getUserMedia) {
-          try {
-            const stream = await navigator.mediaDevices.getUserMedia({
-              video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
-              audio: false
-            });
-            if (!isActive) {
-              stream.getTracks().forEach(track => track.stop());
-              return;
+          const modelUrls = [
+            '/models/gesture_recognizer.task',
+            'https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task',
+          ];
+
+          for (const modelUrl of modelUrls) {
+            try {
+              return await GestureRecognizer.createFromOptions(vision, {
+                baseOptions: {
+                  modelAssetPath: modelUrl,
+                  delegate: 'GPU',
+                },
+                runningMode: 'VIDEO',
+                numHands: 1,
+              });
+            } catch {
+              try {
+                return await GestureRecognizer.createFromOptions(vision, {
+                  baseOptions: {
+                    modelAssetPath: modelUrl,
+                    delegate: 'CPU',
+                  },
+                  runningMode: 'VIDEO',
+                  numHands: 1,
+                });
+              } catch {
+                continue;
+              }
             }
-            if (videoRef.current) {
-              videoRef.current.srcObject = stream;
-              await videoRef.current.play();
-              callbacksRef.current.onStatus('AI READY');
-              predictWebcam();
-            }
-          } catch (camErr: any) {
-            if (camErr.name === 'NotAllowedError') {
-              callbacksRef.current.onStatus('CAMERA DENIED');
-            } else if (camErr.name === 'NotFoundError') {
-              callbacksRef.current.onStatus('NO CAMERA');
-            } else {
-              callbacksRef.current.onStatus('CAM ERROR');
-            }
-            return;
           }
-        } else {
-          callbacksRef.current.onStatus('NO CAMERA SUPPORT');
+          throw new Error('Model load failed');
+        })();
+
+        const [stream, gestureRecognizer] = await Promise.all([
+          streamPromise,
+          recognizerPromise,
+        ]);
+
+        if (!isActive) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
         }
-      } catch (err: any) {
+
+        recognizer = gestureRecognizer;
+
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.onloadedmetadata = () => {
+            videoRef.current?.play();
+            if (canvasRef.current && videoRef.current) {
+              canvasRef.current.width = videoRef.current.videoWidth;
+              canvasRef.current.height = videoRef.current.videoHeight;
+            }
+            callbacksRef.current.onStatus('AI READY');
+            lastFrameTimeRef.current = Date.now();
+            predictWebcam();
+          };
+        }
+      } catch (err: unknown) {
         console.error('AI Setup Error:', err);
-        callbacksRef.current.onStatus('AI ERROR');
+        const error = err as { name?: string };
+        if (error.name === 'NotAllowedError') {
+          callbacksRef.current.onStatus('CAMERA DENIED');
+        } else if (error.name === 'NotFoundError') {
+          callbacksRef.current.onStatus('NO CAMERA');
+        } else {
+          callbacksRef.current.onStatus('AI ERROR');
+        }
       }
     };
 
     const predictWebcam = () => {
-      if (!handLandmarker || !videoRef.current || !canvasRef.current) {
-        requestRef = requestAnimationFrame(predictWebcam);
-        return;
-      }
-      
-      if (videoRef.current.videoWidth === 0) {
+      if (!recognizer || !videoRef.current || !canvasRef.current) {
         requestRef = requestAnimationFrame(predictWebcam);
         return;
       }
 
-      const results = handLandmarker.detectForVideo(videoRef.current, Date.now());
-      const ctx = canvasRef.current.getContext('2d');
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+      const ctx = canvas.getContext('2d');
       const { debugMode: dbg } = callbacksRef.current;
 
-      // 绘制调试信息
-      if (ctx) {
-        ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
-        if (dbg) {
-          canvasRef.current.width = videoRef.current.videoWidth;
-          canvasRef.current.height = videoRef.current.videoHeight;
-          if (results.landmarks?.length > 0) {
+      // 只在视频帧更新时处理
+      if (
+        video.currentTime !== lastVideoTimeRef.current &&
+        video.videoWidth > 0
+      ) {
+        lastVideoTimeRef.current = video.currentTime;
+
+        const now = Date.now();
+        const delta = (now - lastFrameTimeRef.current) / 1000;
+        lastFrameTimeRef.current = now;
+
+        // 冷却计时
+        if (pinchCooldownRef.current > 0) {
+          pinchCooldownRef.current -= delta;
+        }
+
+        const results = recognizer.recognizeForVideo(video, now);
+
+        if (ctx) {
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
+
+        if (results.landmarks && results.landmarks.length > 0) {
+          const landmarks = results.landmarks[0];
+          const wrist = landmarks[0];
+
+          // 绘制调试信息
+          if (dbg && ctx) {
             const drawingUtils = new DrawingUtils(ctx);
-            for (const landmarks of results.landmarks) {
-              drawingUtils.drawConnectors(landmarks, HandLandmarker.HAND_CONNECTIONS, { color: '#FFD700', lineWidth: 2 });
-              drawingUtils.drawLandmarks(landmarks, { color: '#FF0000', lineWidth: 1 });
-            }
-          }
-        }
-      }
-
-      // 冷却计时
-      if (pinchCooldownRef.current > 0) pinchCooldownRef.current--;
-
-      if (results.landmarks?.length > 0) {
-        const landmarks = results.landmarks[0] as Landmark[];
-        const { gesture, confidence } = recognizeGesture(landmarks);
-        
-        // 手势稳定性检测：需要连续几帧相同手势（降低到2帧提高响应速度）
-        if (gesture === lastGestureRef.current) {
-          gestureHoldCountRef.current++;
-        } else {
-          gestureHoldCountRef.current = 0;
-          lastGestureRef.current = gesture;
-        }
-        
-        // 降低稳定性要求到2帧，提高响应速度
-        const isStable = gestureHoldCountRef.current >= 2;
-        
-        if (dbg) {
-          callbacksRef.current.onStatus(`${gesture} (${(confidence * 100).toFixed(0)}%)`);
-        }
-
-        // 手掌中心位置（用于移动追踪）
-        const palmCenter = {
-          x: (landmarks[LANDMARKS.WRIST].x + landmarks[LANDMARKS.MIDDLE_MCP].x) / 2,
-          y: (landmarks[LANDMARKS.WRIST].y + landmarks[LANDMARKS.MIDDLE_MCP].y) / 2
-        };
-
-        // 处理手势（降低置信度阈值提高识别率）
-        if (isStable && confidence > 0.6) {
-          // 捏合手势
-          if (gesture === 'Pinch' && pinchCooldownRef.current === 0) {
-            pinchCooldownRef.current = 30;
-            const thumbTip = landmarks[LANDMARKS.THUMB_TIP];
-            const indexTip = landmarks[LANDMARKS.INDEX_TIP];
-            callbacksRef.current.onPinch?.({
-              x: (thumbTip.x + indexTip.x) / 2,
-              y: (thumbTip.y + indexTip.y) / 2
+            drawingUtils.drawConnectors(
+              landmarks,
+              GestureRecognizer.HAND_CONNECTIONS,
+              { color: '#FFD700', lineWidth: 2 }
+            );
+            drawingUtils.drawLandmarks(landmarks, {
+              color: '#FF0000',
+              lineWidth: 1,
             });
           }
-          
-          // 张开手掌 + 移动 = 控制视角和旋转速度
-          if (gesture === 'Open_Palm') {
-            // 传递手掌垂直位置（用于控制旋转速度）
+
+          // 手指状态检测
+          const indexExtended = isExtended(landmarks, 8, 5, wrist);
+          const middleExtended = isExtended(landmarks, 12, 9, wrist);
+          const ringExtended = isExtended(landmarks, 16, 13, wrist);
+          const pinkyExtended = isExtended(landmarks, 20, 17, wrist);
+          const thumbExtended = isExtended(landmarks, 4, 2, wrist);
+          const pinch = isPinching(landmarks);
+
+          // 五指张开检测
+          const isFiveFingers =
+            indexExtended &&
+            middleExtended &&
+            ringExtended &&
+            pinkyExtended &&
+            thumbExtended;
+
+          // 手掌中心位置
+          const palmX =
+            (landmarks[0].x + landmarks[5].x + landmarks[17].x) / 3;
+          const palmY =
+            (landmarks[0].y + landmarks[5].y + landmarks[17].y) / 3;
+
+          // 计算移动差值（镜像 x 轴）
+          let dx = 0;
+          let dy = 0;
+          if (lastPalmPosRef.current) {
+            dx = 1.0 - palmX - (1.0 - lastPalmPosRef.current.x);
+            dy = palmY - lastPalmPosRef.current.y;
+          }
+          lastPalmPosRef.current = { x: palmX, y: palmY };
+
+          // 获取 MediaPipe 内置手势识别结果
+          let detectedGesture: GestureName = 'None';
+          let gestureScore = 0;
+
+          if (
+            results.gestures &&
+            results.gestures.length > 0 &&
+            results.gestures[0].length > 0
+          ) {
+            const gesture = results.gestures[0][0];
+            gestureScore = gesture.score;
+
+            const gestureMap: Record<string, GestureName> = {
+              Open_Palm: 'Open_Palm',
+              Closed_Fist: 'Closed_Fist',
+              Pointing_Up: 'Pointing_Up',
+              Thumb_Up: 'Thumb_Up',
+              Thumb_Down: 'Thumb_Down',
+              Victory: 'Victory',
+              ILoveYou: 'ILoveYou',
+            };
+
+            if (gestureScore > 0.5 && gestureMap[gesture.categoryName]) {
+              detectedGesture = gestureMap[gesture.categoryName];
+            }
+          }
+
+          // 捏合检测（优先级最高）
+          if (pinch && middleExtended) {
+            detectedGesture = 'Pinch';
+            gestureScore = 0.85;
+          }
+
+          // 手势稳定性检测
+          if (detectedGesture !== 'None') {
+            if (gestureStreakRef.current.name === detectedGesture) {
+              gestureStreakRef.current.count++;
+            } else {
+              gestureStreakRef.current = { name: detectedGesture, count: 1 };
+            }
+          } else {
+            gestureStreakRef.current = { name: null, count: 0 };
+          }
+
+          // 不同手势需要不同的稳定帧数
+          const getThreshold = (gesture: GestureName): number => {
+            switch (gesture) {
+              case 'Pinch':
+                return 2;
+              case 'Open_Palm':
+                return 2; // 降低阈值，更快响应
+              case 'Closed_Fist':
+                return 3;
+              case 'Victory':
+                return 4;
+              case 'ILoveYou':
+                return 4;
+              default:
+                return 3;
+            }
+          };
+
+          const isStable =
+            gestureStreakRef.current.count >= getThreshold(detectedGesture);
+
+          if (dbg) {
+            callbacksRef.current.onStatus(
+              `${detectedGesture} (${(gestureScore * 100).toFixed(0)}%) dx:${dx.toFixed(3)} boost:${rotationBoostRef.current.toFixed(2)}`
+            );
+          }
+
+          // ========== 核心：五指张开时的旋转和缩放控制 ==========
+          if (isFiveFingers || detectedGesture === 'Open_Palm') {
+            // 1. 旋转控制：手掌水平移动控制旋转加速度
+            // 极大提高灵敏度，让旋转更快响应
+            if (Math.abs(dx) > 0.003) {
+              // 累加加速度，方向反转（手向左移动 -> 树向右旋转）
+              rotationBoostRef.current = Math.max(
+                -50.0,
+                Math.min(50.0, rotationBoostRef.current - dx * 150.0)
+              );
+            }
+
+            // 2. 缩放控制：仅在五指完全张开且稳定时才触发
+            // 手掌张开（scale变大）-> 放大（zoom负值让相机靠近）
+            // 手掌收缩（scale变小）-> 缩小（zoom正值让相机远离）
+            if (isFiveFingers && isStable && detectedGesture === 'Open_Palm') {
+              const currentScale = Math.hypot(
+                wrist.x - landmarks[9].x,
+                wrist.y - landmarks[9].y
+              );
+              if (lastHandScaleRef.current !== null) {
+                const deltaScale = currentScale - lastHandScaleRef.current;
+                const speed = Math.abs(deltaScale);
+                // 提高阈值，避免抖动
+                if (speed > 0.003 && speed < 0.1 && callbacksRef.current.onZoom) {
+                  // 反转方向：手张开放大，手收缩缩小
+                  const amplifiedDelta =
+                    Math.sign(deltaScale) * speed * (1 + speed * 50);
+                  callbacksRef.current.onZoom(amplifiedDelta * 300);
+                }
+              }
+              lastHandScaleRef.current = currentScale;
+            } else {
+              // 非五指张开或不稳定时，重置缩放追踪
+              lastHandScaleRef.current = null;
+            }
+
+            // 3. 传递手掌垂直位置
             if (callbacksRef.current.onPalmVertical) {
-              // palmCenter.y 范围约 0.2-0.8，映射到 0-1
-              const normalizedY = Math.max(0, Math.min(1, (palmCenter.y - 0.2) / 0.6));
+              const normalizedY = Math.max(
+                0,
+                Math.min(1, (palmY - 0.2) / 0.6)
+              );
               callbacksRef.current.onPalmVertical(normalizedY);
             }
-            
-            // 控制视角移动
-            if (callbacksRef.current.onPalmMove && lastPalmPosRef.current) {
-              const deltaX = (lastPalmPosRef.current.x - palmCenter.x) * 4;
-              const deltaY = (palmCenter.y - lastPalmPosRef.current.y) * 3;
-              
-              if (Math.abs(deltaX) > 0.008 || Math.abs(deltaY) > 0.008) {
-                callbacksRef.current.onPalmMove(deltaX, deltaY);
-              }
+
+            // 4. 视角移动控制 - 提高灵敏度
+            if (
+              callbacksRef.current.onPalmMove &&
+              (Math.abs(dx) > 0.005 || Math.abs(dy) > 0.005)
+            ) {
+              callbacksRef.current.onPalmMove(dx * 8, dy * 6);
             }
-            lastPalmPosRef.current = { ...palmCenter };
           } else {
+            // 非五指张开时，重置手掌位置追踪（缩放已在上面处理）
             lastPalmPosRef.current = null;
           }
-          
-          // 触发手势回调（排除移动相关手势）
-          if (gesture !== 'Pinch' && gesture !== 'None') {
-            callbacksRef.current.onGesture(gesture);
-          }
-        }
 
-        // 自动旋转（基于手的水平位置）
-        if (!callbacksRef.current.isPhotoSelected && gesture !== 'Open_Palm') {
-          const speed = (0.5 - palmCenter.x) * 0.1;
-          callbacksRef.current.onMove(Math.abs(speed) > 0.01 ? speed : 0);
+          // 旋转加速度衰减（阻尼）
+          // 如果选中了照片或正在捏合，立即停止旋转
+          if (callbacksRef.current.isPhotoSelected || detectedGesture === 'Pinch') {
+            rotationBoostRef.current = 0;
+            callbacksRef.current.onMove(0);
+          } else {
+            // 正常衰减
+            rotationBoostRef.current *= 0.88;
+            if (Math.abs(rotationBoostRef.current) < 0.01) {
+              rotationBoostRef.current = 0;
+            }
+            // 应用旋转速度
+            callbacksRef.current.onMove(rotationBoostRef.current * 0.08);
+          }
+
+          // 处理稳定的手势
+          if (isStable && gestureScore > 0.5) {
+            // 捏合手势
+            if (
+              detectedGesture === 'Pinch' &&
+              pinchCooldownRef.current <= 0
+            ) {
+              pinchCooldownRef.current = 0.8;
+              const thumbTip = landmarks[4];
+              const indexTip = landmarks[8];
+              callbacksRef.current.onPinch?.({
+                x: (thumbTip.x + indexTip.x) / 2,
+                y: (thumbTip.y + indexTip.y) / 2,
+              });
+            }
+
+            // 触发手势回调（排除 Open_Palm，因为它用于旋转控制）
+            if (
+              detectedGesture !== 'Pinch' &&
+              detectedGesture !== 'None' &&
+              detectedGesture !== 'Open_Palm'
+            ) {
+              callbacksRef.current.onGesture(detectedGesture);
+            }
+
+            // Open_Palm 和 Closed_Fist 用于状态切换
+            if (
+              detectedGesture === 'Open_Palm' ||
+              detectedGesture === 'Closed_Fist'
+            ) {
+              callbacksRef.current.onGesture(detectedGesture);
+            }
+          }
         } else {
-          callbacksRef.current.onMove(0);
-        }
-      } else {
-        // 没有检测到手
-        callbacksRef.current.onMove(0);
-        lastPalmPosRef.current = null;
-        lastGestureRef.current = 'None';
-        gestureHoldCountRef.current = 0;
-        if (!dbg) {
-          callbacksRef.current.onStatus('AI READY');
+          // 没有检测到手 - 旋转继续衰减
+          rotationBoostRef.current *= 0.95;
+          if (Math.abs(rotationBoostRef.current) < 0.001) {
+            rotationBoostRef.current = 0;
+          }
+          callbacksRef.current.onMove(rotationBoostRef.current * 0.02);
+
+          lastPalmPosRef.current = null;
+          lastHandScaleRef.current = null;
+          gestureStreakRef.current = { name: null, count: 0 };
+          if (!dbg) {
+            callbacksRef.current.onStatus('AI READY');
+          }
         }
       }
 
@@ -422,11 +513,11 @@ export const GestureController = ({
       cancelAnimationFrame(requestRef);
       if (videoRef.current?.srcObject) {
         const stream = videoRef.current.srcObject as MediaStream;
-        stream.getTracks().forEach(track => track.stop());
+        stream.getTracks().forEach((track) => track.stop());
       }
-      handLandmarker?.close();
+      recognizer?.close();
     };
-  }, [enabled]);
+  }, [enabled, isExtended, isPinching]);
 
   return (
     <>
@@ -440,7 +531,7 @@ export const GestureController = ({
           width: debugMode ? '320px' : '1px',
           zIndex: debugMode ? 100 : -1,
           pointerEvents: 'none',
-          transform: 'scaleX(-1)'
+          transform: 'scaleX(-1)',
         }}
         playsInline
         muted
@@ -456,7 +547,7 @@ export const GestureController = ({
           height: debugMode ? 'auto' : '1px',
           zIndex: debugMode ? 101 : -1,
           pointerEvents: 'none',
-          transform: 'scaleX(-1)'
+          transform: 'scaleX(-1)',
         }}
       />
     </>

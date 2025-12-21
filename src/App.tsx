@@ -46,6 +46,7 @@ export default function GrandTreeApp() {
   const [sceneState, setSceneState] = useState<SceneState>('CHAOS');
   const [rotationSpeed, setRotationSpeed] = useState(0);
   const [palmMove, setPalmMove] = useState<{ x: number; y: number } | undefined>(undefined);
+  const [zoomDelta, setZoomDelta] = useState<number>(0);
   const [aiStatus, setAiStatus] = useState("INITIALIZING...");
   const [debugMode, setDebugMode] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -543,6 +544,13 @@ export default function GrandTreeApp() {
     setTimeout(() => setPalmMove(undefined), 50);
   }, []);
 
+  // 处理手势缩放
+  const handleZoom = useCallback((delta: number) => {
+    setZoomDelta(delta);
+    // 短暂后清除
+    setTimeout(() => setZoomDelta(0), 50);
+  }, []);
+
   // 获取当前音乐 URL
   const getMusicUrl = useCallback(() => {
     const musicConfig = sceneConfig.music || defaultMusic;
@@ -991,6 +999,7 @@ export default function GrandTreeApp() {
             sceneState={timeline.showTree ? 'FORMED' : sceneState}
             rotationSpeed={rotationSpeed}
             palmMove={palmMove}
+            zoomDelta={zoomDelta}
             config={sceneConfig}
             selectedPhotoIndex={selectedPhotoIndex}
             onPhotoSelect={setSelectedPhotoIndex}
@@ -1027,6 +1036,7 @@ export default function GrandTreeApp() {
         isPhotoSelected={selectedPhotoIndex !== null}
         onPinch={handlePinch}
         onPalmMove={handlePalmMove}
+        onZoom={handleZoom}
       />
 
       {/* 设置面板 */}

@@ -45,6 +45,7 @@ interface ExperienceProps {
   heartPhotoInterval?: number; // 照片轮播间隔（毫秒）
   heartBottomText?: string; // 爱心特效底部文字
   palmMove?: { x: number; y: number }; // 手掌滑动控制视角
+  zoomDelta?: number; // 手势缩放控制
   onHeartPaused?: (paused: boolean) => void; // 爱心特效暂停状态回调
   fireworkTrigger?: boolean; // 烟花触发信号
   onFireworkTriggered?: () => void; // 烟花触发后回调
@@ -76,6 +77,7 @@ export const Experience = ({
   heartPhotoInterval = 3000,
   heartBottomText,
   palmMove,
+  zoomDelta,
   onHeartPaused,
   fireworkTrigger,
   onFireworkTriggered,
@@ -165,6 +167,18 @@ export const Experience = ({
       } else if (selectedPhotoIndex === null) {
         // 没有手掌控制且没有选中照片时使用自动旋转
         controlsRef.current.setAzimuthalAngle(currentAzimuth + rotationSpeed);
+      }
+      
+      // 手势缩放控制
+      // zoomDelta > 0 表示手张开 -> 放大（相机靠近，距离减小）
+      // zoomDelta < 0 表示手收缩 -> 缩小（相机远离，距离增大）
+      if (zoomDelta && Math.abs(zoomDelta) > 0.1) {
+        const currentDistance = controlsRef.current.getDistance();
+        // 反转方向：zoomDelta正值时距离减小（放大）
+        const newDistance = Math.max(25, Math.min(100, currentDistance - zoomDelta * 1.5));
+        // 通过调整相机位置实现缩放
+        const direction = controlsRef.current.object.position.clone().normalize();
+        controlsRef.current.object.position.copy(direction.multiplyScalar(newDistance));
       }
       
       controlsRef.current.update();
