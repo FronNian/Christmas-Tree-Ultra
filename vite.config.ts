@@ -6,6 +6,7 @@ import compression from 'vite-plugin-compression'
 
 // https://vite.dev/config/
 export default defineConfig({
+  base: './', // 使用相对路径，支持 Live Server 本地预览
   plugins: [
     react(),
     basicSsl(),
