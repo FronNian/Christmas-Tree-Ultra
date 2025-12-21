@@ -1,4 +1,4 @@
-import { useRef, useMemo } from 'react';
+import { useRef, useMemo, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { CONFIG } from '../../config';
@@ -108,6 +108,16 @@ export const SpiralRibbon = ({
     if (!double) return null;
     return createSpiralGeometry(turns, width, Math.PI, actualHeight, actualRadius);
   }, [turns, width, double, actualHeight, actualRadius]);
+
+  // 清理资源：在组件卸载时释放 geometry
+  useEffect(() => {
+    return () => {
+      ribbonGeometry.dispose();
+      if (ribbon2Geometry) {
+        ribbon2Geometry.dispose();
+      }
+    };
+  }, [ribbonGeometry, ribbon2Geometry]);
 
   // 动画持续时间（秒），speed 越大越快
   const duration = 1 / Math.max(0.3, Math.min(3, speed));

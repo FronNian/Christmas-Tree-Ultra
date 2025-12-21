@@ -364,6 +364,8 @@ export const PhotoOrnaments = ({
         const mobile = isMobile();
         const distance = mobile ? 20 : 28;
         const target = camera.position.clone().add(cameraDir.multiplyScalar(distance));
+        // 将照片位置稍微上移，避免显示在屏幕底部
+        target.y += mobile ? 4 : 6;
         // 选中时的缩放：移动端适中，桌面端稍大
         targetScale = mobile ? 6 : 8;
         objData.currentPos.lerp(target, delta * 8);

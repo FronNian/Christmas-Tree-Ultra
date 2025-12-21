@@ -191,6 +191,13 @@ export const Fireworks = ({ config, trigger, onTriggerConsumed }: FireworksProps
     });
   });
 
+  // 清理资源：在组件卸载时清空烟花状态
+  useEffect(() => {
+    return () => {
+      setFireworks([]);
+    };
+  }, []);
+
   if (!config.enabled) return null;
 
   return (

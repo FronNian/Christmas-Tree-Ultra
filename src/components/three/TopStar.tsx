@@ -93,6 +93,17 @@ export const TopStar = ({ state, avatarUrl, treeHeight }: TopStarProps) => {
     return geometry;
   }, [outerRadius, innerRadius]);
 
+  // 清理资源：在组件卸载时释放 geometry 和 texture
+  useEffect(() => {
+    return () => {
+      starGeometry.dispose();
+      starFaceGeometry.dispose();
+      if (avatarTexture) {
+        avatarTexture.dispose();
+      }
+    };
+  }, [starGeometry, starFaceGeometry, avatarTexture]);
+
   useFrame((frameState, delta) => {
     if (groupRef.current) {
       groupRef.current.rotation.y += delta * 0.5;

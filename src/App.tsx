@@ -53,6 +53,7 @@ export default function GrandTreeApp() {
   const [musicPlaying, setMusicPlaying] = useState(true);
   const [aiEnabled, setAiEnabled] = useState(true);
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState<number | null>(null);
+  const [photoLocked, setPhotoLocked] = useState(false); // 照片选中后的锁定期
   const [uploadedPhotos, setUploadedPhotos] = useState<string[]>([]);
   const [refreshKey, setRefreshKey] = useState(0);
 
@@ -94,6 +95,7 @@ export default function GrandTreeApp() {
   const heartTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const textEffectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const textSwitchTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const photoLockTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null); // 照片锁定计时器
   
   // 配置 refs（避免 useCallback 依赖变化导致重新创建）
   const configuredTextsRef = useRef<string[]>([]);
@@ -512,11 +514,18 @@ export default function GrandTreeApp() {
       return;
     }
     
+    // 锁定期间忽略捏合操作
+    if (photoLocked) {
+      return;
+    }
+    
     // 普通模式下的照片选择
     if (selectedPhotoIndex !== null) {
+      // 已选中照片时，捏合取消选择
       setSelectedPhotoIndex(null);
     } else {
-      let closestIndex = 0;
+      // 未选中时，直接选择最近的照片（不限制距离）
+      let closestIndex = -1;
       let closestDist = Infinity;
 
       photoScreenPositions.forEach((photoPos) => {
@@ -531,25 +540,38 @@ export default function GrandTreeApp() {
         }
       });
 
-      if (closestDist < 0.15) {
+      // 只要找到照片就选中（移除距离限制）
+      if (closestIndex >= 0) {
         setSelectedPhotoIndex(closestIndex);
+        // 启动 1.5 秒锁定期
+        setPhotoLocked(true);
+        if (photoLockTimerRef.current) {
+          clearTimeout(photoLockTimerRef.current);
+        }
+        photoLockTimerRef.current = setTimeout(() => {
+          setPhotoLocked(false);
+        }, 1500);
       }
     }
-  }, [selectedPhotoIndex, showHeart]);
+  }, [selectedPhotoIndex, showHeart, photoLocked]);
 
   // 处理手掌滑动控制视角
   const handlePalmMove = useCallback((deltaX: number, deltaY: number) => {
+    // 照片锁定期间禁止相机移动
+    if (photoLocked) return;
     setPalmMove({ x: deltaX, y: deltaY });
     // 短暂后清除，让下一帧可以继续接收新的移动
     setTimeout(() => setPalmMove(undefined), 50);
-  }, []);
+  }, [photoLocked]);
 
   // 处理手势缩放
   const handleZoom = useCallback((delta: number) => {
+    // 照片锁定期间禁止缩放
+    if (photoLocked) return;
     setZoomDelta(delta);
     // 短暂后清除
     setTimeout(() => setZoomDelta(0), 50);
-  }, []);
+  }, [photoLocked]);
 
   // 获取当前音乐 URL
   const getMusicUrl = useCallback(() => {

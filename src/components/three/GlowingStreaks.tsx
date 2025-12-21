@@ -1,4 +1,4 @@
-import { useRef, useMemo } from 'react';
+import { useRef, useMemo, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { CONFIG } from '../../config';
@@ -161,6 +161,20 @@ export const GlowingStreaks = ({
   });
 
   const baseColor = new THREE.Color(color);
+
+  // 清理资源：在组件卸载时释放所有 tube 几何体
+  useEffect(() => {
+    return () => {
+      tubeRefs.current.forEach(tube => {
+        if (tube?.geometry) {
+          tube.geometry.dispose();
+        }
+        if (tube?.material) {
+          (tube.material as THREE.Material).dispose();
+        }
+      });
+    };
+  }, []);
 
   return (
     <group ref={groupRef}>

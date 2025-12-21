@@ -162,6 +162,13 @@ export const FairyLights = ({
   const progressRef = useRef(0);
   const geometry = useMemo(() => new THREE.SphereGeometry(0.8, 8, 8), []);
   
+  // 清理资源：在组件卸载时释放 geometry
+  useEffect(() => {
+    return () => {
+      geometry.dispose();
+    };
+  }, [geometry]);
+  
   // 存储当前动画中的 chaos 位置（用于平滑过渡散开形状）
   const currentChaosRef = useRef<THREE.Vector3[]>([]);
   const targetChaosRef = useRef<THREE.Vector3[]>([]);

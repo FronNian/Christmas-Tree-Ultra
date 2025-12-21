@@ -1,4 +1,173 @@
 import { CONFIG } from '../config';
+import type { 
+  BellConfig, 
+  ShootingStarsConfig, 
+  AuroraConfig, 
+  FireworksConfig,
+  SceneConfig 
+} from '../types';
+
+// ============ 移动端性能适配 ============
+
+/**
+ * 移动端性能适配配置
+ * 根据设备类型返回降级后的粒子数量和效果参数
+ */
+export interface MobileAdaptedConfig {
+  bells: Partial<BellConfig>;
+  shootingStars: Partial<ShootingStarsConfig>;
+  aurora: Partial<AuroraConfig>;
+  fireworks: Partial<FireworksConfig>;
+  reductionFactor: number;  // 降级系数 (0-1)
+}
+
+/**
+ * 获取移动端适配后的视觉增强配置
+ * 移动端粒子数量降至桌面端的 50% 以下
+ * @returns 适配后的配置对象
+ */
+export const getMobileAdaptedConfig = (): MobileAdaptedConfig => {
+  const mobile = isMobile();
+  const tablet = isTablet();
+  
+  // 桌面端不需要降级
+  if (!mobile && !tablet) {
+    return {
+      bells: {},
+      shootingStars: {},
+      aurora: {},
+      fireworks: {},
+      reductionFactor: 1.0
+    };
+  }
+  
+  // 移动端降级系数：手机 0.3，平板 0.5
+  const reductionFactor = mobile ? 0.3 : 0.5;
+  
+  return {
+    bells: {
+      count: mobile ? 5 : 8,           // 手机 5 个，平板 8 个（桌面默认 10）
+      size: mobile ? 0.8 : 0.9,        // 略微缩小
+      swingSpeed: mobile ? 0.8 : 1.0   // 降低动画频率
+    },
+    shootingStars: {
+      frequency: mobile ? [8, 15] : [5, 12],  // 降低出现频率
+      trailLength: mobile ? 0.5 : 0.8,        // 缩短拖尾
+      glowIntensity: mobile ? 0.5 : 0.8       // 降低发光强度
+    },
+    aurora: {
+      intensity: mobile ? 0.4 : 0.6,    // 降低亮度
+      waveSpeed: mobile ? 0.5 : 0.8,    // 降低波动速度
+      coverage: mobile ? 0.5 : 0.7      // 减少覆盖范围
+    },
+    fireworks: {
+      particleCount: mobile ? 30 : 60,   // 大幅减少粒子数（桌面默认 100）
+      maxConcurrent: mobile ? 1 : 2,     // 限制同时数量
+      fadeSpeed: mobile ? 1.5 : 1.2      // 加快消散
+    },
+    reductionFactor
+  };
+};
+
+/**
+ * 应用移动端适配到场景配置
+ * @param config 原始场景配置
+ * @returns 适配后的场景配置
+ */
+export const applyMobileAdaptation = (config: SceneConfig): SceneConfig => {
+  const mobile = isMobile();
+  const tablet = isTablet();
+  
+  // 桌面端不需要适配
+  if (!mobile && !tablet) {
+    return config;
+  }
+  
+  const adapted = getMobileAdaptedConfig();
+  const result = { ...config };
+  
+  // 适配铃铛配置
+  if (result.bells) {
+    result.bells = {
+      ...result.bells,
+      count: Math.min(result.bells.count, adapted.bells.count ?? result.bells.count),
+      size: Math.min(result.bells.size, adapted.bells.size ?? result.bells.size),
+      swingSpeed: Math.min(result.bells.swingSpeed, adapted.bells.swingSpeed ?? result.bells.swingSpeed)
+    };
+  }
+  
+  // 适配流星配置
+  if (result.shootingStars) {
+    const adaptedFreq = adapted.shootingStars.frequency ?? result.shootingStars.frequency;
+    result.shootingStars = {
+      ...result.shootingStars,
+      frequency: [
+        Math.max(result.shootingStars.frequency[0], adaptedFreq[0]),
+        Math.max(result.shootingStars.frequency[1], adaptedFreq[1])
+      ],
+      trailLength: Math.min(result.shootingStars.trailLength, adapted.shootingStars.trailLength ?? result.shootingStars.trailLength),
+      glowIntensity: Math.min(result.shootingStars.glowIntensity, adapted.shootingStars.glowIntensity ?? result.shootingStars.glowIntensity)
+    };
+  }
+  
+  // 适配极光配置
+  if (result.aurora) {
+    result.aurora = {
+      ...result.aurora,
+      intensity: Math.min(result.aurora.intensity, adapted.aurora.intensity ?? result.aurora.intensity),
+      waveSpeed: Math.min(result.aurora.waveSpeed, adapted.aurora.waveSpeed ?? result.aurora.waveSpeed),
+      coverage: Math.min(result.aurora.coverage, adapted.aurora.coverage ?? result.aurora.coverage)
+    };
+  }
+  
+  // 适配烟花配置
+  if (result.fireworks) {
+    result.fireworks = {
+      ...result.fireworks,
+      particleCount: Math.min(result.fireworks.particleCount, adapted.fireworks.particleCount ?? result.fireworks.particleCount),
+      maxConcurrent: Math.min(result.fireworks.maxConcurrent, adapted.fireworks.maxConcurrent ?? result.fireworks.maxConcurrent),
+      fadeSpeed: Math.max(result.fireworks.fadeSpeed, adapted.fireworks.fadeSpeed ?? result.fireworks.fadeSpeed)
+    };
+  }
+  
+  return result;
+};
+
+/**
+ * 检测设备性能等级
+ * @returns 'high' | 'medium' | 'low'
+ */
+export const getDevicePerformanceLevel = (): 'high' | 'medium' | 'low' => {
+  if (typeof window === 'undefined') return 'medium';
+  
+  const mobile = isMobile();
+  const tablet = isTablet();
+  
+  // 检测硬件并发数（CPU 核心数）
+  const cores = navigator.hardwareConcurrency || 4;
+  
+  // 检测设备内存（如果可用）
+  const memory = (navigator as Navigator & { deviceMemory?: number }).deviceMemory || 4;
+  
+  if (mobile) {
+    // 移动端：低性能
+    return 'low';
+  }
+  
+  if (tablet) {
+    // 平板：中等性能
+    return 'medium';
+  }
+  
+  // 桌面端根据硬件判断
+  if (cores >= 8 && memory >= 8) {
+    return 'high';
+  } else if (cores >= 4 && memory >= 4) {
+    return 'medium';
+  }
+  
+  return 'low';
+};
 
 // 检测是否为移动端（手机）
 export const isMobile = (): boolean => {

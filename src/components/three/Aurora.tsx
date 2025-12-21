@@ -141,6 +141,16 @@ export const Aurora = ({ config }: AuroraProps) => {
     }
   });
 
+  // 清理资源：在组件卸载时释放 geometry 和 material
+  useEffect(() => {
+    return () => {
+      geometry.dispose();
+      if (materialRef.current) {
+        materialRef.current.dispose();
+      }
+    };
+  }, [geometry]);
+
   if (!config.enabled) return null;
 
   return (

@@ -136,7 +136,8 @@ const seededRandom = (seed: number) => {
 };
 
 // 根据散开形状生成初始位置（确定性，基于索引）
-const generateScatterPositions = (count: number, shape: ScatterShape): Float32Array => {
+// scaleMultiplier: 基于树形尺寸的缩放系数
+const generateScatterPositions = (count: number, shape: ScatterShape, scaleMultiplier: number = 1): Float32Array => {
   const positions = new Float32Array(count * 3);
   
   switch (shape) {
@@ -147,7 +148,7 @@ const generateScatterPositions = (count: number, shape: ScatterShape): Float32Ar
         const r3 = seededRandom(i * 3 + 3);
         const theta = r1 * Math.PI * 2;
         const phi = Math.acos(2 * r2 - 1);
-        const r = 15 + r3 * 20;
+        const r = (15 + r3 * 20) * scaleMultiplier;
         positions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
         positions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
         positions[i * 3 + 2] = r * Math.cos(phi);
@@ -160,8 +161,8 @@ const generateScatterPositions = (count: number, shape: ScatterShape): Float32Ar
         const r2 = seededRandom(i * 3 + 2);
         const t = i / count;
         const angle = t * Math.PI * 12;
-        const r = 5 + t * 20 + r1 * 3;
-        const y = -15 + t * 40 + (r2 - 0.5) * 5;
+        const r = (5 + t * 20 + r1 * 3) * scaleMultiplier;
+        const y = (-15 + t * 40 + (r2 - 0.5) * 5) * scaleMultiplier;
         positions[i * 3] = r * Math.cos(angle);
         positions[i * 3 + 1] = y;
         positions[i * 3 + 2] = r * Math.sin(angle);
@@ -173,9 +174,9 @@ const generateScatterPositions = (count: number, shape: ScatterShape): Float32Ar
         const r1 = seededRandom(i * 3 + 1);
         const r2 = seededRandom(i * 3 + 2);
         const r3 = seededRandom(i * 3 + 3);
-        positions[i * 3] = (r1 - 0.5) * 50;
-        positions[i * 3 + 1] = 20 + r2 * 30;
-        positions[i * 3 + 2] = (r3 - 0.5) * 50;
+        positions[i * 3] = (r1 - 0.5) * 50 * scaleMultiplier;
+        positions[i * 3 + 1] = (20 + r2 * 30) * scaleMultiplier;
+        positions[i * 3 + 2] = (r3 - 0.5) * 50 * scaleMultiplier;
       }
       break;
     }
@@ -185,9 +186,9 @@ const generateScatterPositions = (count: number, shape: ScatterShape): Float32Ar
         const r2 = seededRandom(i * 3 + 2);
         const r3 = seededRandom(i * 3 + 3);
         const angle = r1 * Math.PI * 2;
-        const r = 18 + r2 * 8;
-        const y = (r3 - 0.5) * 10;
-        const thickness = (r2 - 0.5) * 4;
+        const r = (18 + r2 * 8) * scaleMultiplier;
+        const y = (r3 - 0.5) * 10 * scaleMultiplier;
+        const thickness = (r2 - 0.5) * 4 * scaleMultiplier;
         positions[i * 3] = (r + thickness) * Math.cos(angle);
         positions[i * 3 + 1] = y;
         positions[i * 3 + 2] = (r + thickness) * Math.sin(angle);
@@ -204,8 +205,8 @@ const generateScatterPositions = (count: number, shape: ScatterShape): Float32Ar
         // 球面坐标：theta 是水平角度，phi 是垂直角度
         const theta = r1 * Math.PI * 2;
         const phi = Math.acos(2 * r2 - 1); // 均匀分布在球面上
-        // 使用立方根使粒子在球体内部均匀分布
-        const r = Math.cbrt(r3) * 25;
+        // 使用立方根使粒子在球体内部均匀分布，半径随树形尺寸缩放
+        const r = Math.cbrt(r3) * 25 * scaleMultiplier;
         // 标准球面坐标转换
         positions[i * 3] = r * Math.sin(phi) * Math.cos(theta);     // X
         positions[i * 3 + 1] = r * Math.cos(phi);                    // Y (上下)
@@ -312,15 +313,25 @@ export const Foliage = ({
     return { targetPositions, randoms, gatherDelays };
   }, [count, gatherShape, actualHeight, actualRadius]);
 
+  // 计算散开形状的缩放系数（基于树形尺寸与默认尺寸的比例）
+  const scatterScale = useMemo(() => {
+    const defaultHeight = CONFIG.tree.height;
+    const defaultRadius = CONFIG.tree.radius;
+    // 取高度和半径缩放的平均值
+    const heightScale = actualHeight / defaultHeight;
+    const radiusScale = actualRadius / defaultRadius;
+    return (heightScale + radiusScale) / 2;
+  }, [actualHeight, actualRadius]);
+
   // 初始化 chaos 位置
   const positions = useMemo(() => {
-    const pos = generateScatterPositions(count, scatterShape);
+    const pos = generateScatterPositions(count, scatterShape, scatterScale);
     if (!currentChaosRef.current) {
       currentChaosRef.current = new Float32Array(pos);
       targetChaosRef.current = new Float32Array(pos);
     }
     return pos;
-  }, [count, scatterShape]);
+  }, [count, scatterShape, scatterScale]);
 
   // 当 scatterShape 改变时，设置新的目标 chaos 位置
   useEffect(() => {
@@ -331,13 +342,13 @@ export const Foliage = ({
       for (let i = 0; i < count * 3; i++) {
         currentChaosRef.current[i] = currentChaosRef.current[i] + (targetChaosRef.current[i] - currentChaosRef.current[i]) * chaosT;
       }
-      // 设置新的目标位置
-      const newTargets = generateScatterPositions(count, scatterShape);
+      // 设置新的目标位置（使用缩放系数）
+      const newTargets = generateScatterPositions(count, scatterShape, scatterScale);
       targetChaosRef.current = newTargets;
       chaosTransitionRef.current = 0;
       prevScatterShapeRef.current = scatterShape;
     }
-  }, [scatterShape, count, easing]);
+  }, [scatterShape, count, easing, scatterScale]);
 
   // 动画持续时间（秒），speed 越大越快：0.3x -> 3.3秒, 1x -> 1秒, 3x -> 0.33秒
   const duration = 1 / Math.max(0.3, Math.min(3, speed));

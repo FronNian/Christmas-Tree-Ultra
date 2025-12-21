@@ -1,4 +1,4 @@
-import { useRef, useState, useMemo } from 'react';
+import { useRef, useState, useMemo, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 
@@ -50,6 +50,15 @@ export const GiftBox = ({
     opacity: 0.3,
     blending: THREE.AdditiveBlending
   }), [ribbonColor]);
+  
+  // 清理资源：在组件卸载时释放所有材质
+  useEffect(() => {
+    return () => {
+      boxMaterial.dispose();
+      ribbonMaterial.dispose();
+      glowMaterial.dispose();
+    };
+  }, [boxMaterial, ribbonMaterial, glowMaterial]);
   
   // 动画
   useFrame((_, delta) => {
