@@ -332,23 +332,135 @@ export const getLocalConfig = (): Record<string, unknown> | null => {
 };
 
 /**
- * 保存照片到本地
+ * 保存照片到本地（使用 IndexedDB 支持大容量存储）
  */
-export const saveLocalPhotos = (photos: string[]): void => {
+export const saveLocalPhotos = async (photos: string[]): Promise<void> => {
   try {
-    localStorage.setItem(LOCAL_PHOTOS_KEY, JSON.stringify(photos));
+    // 优先使用 IndexedDB
+    const db = await openPhotosDB();
+    const tx = db.transaction('photos', 'readwrite');
+    const store = tx.objectStore('photos');
+    
+    // 清除旧数据
+    await new Promise<void>((resolve, reject) => {
+      const clearReq = store.clear();
+      clearReq.onsuccess = () => resolve();
+      clearReq.onerror = () => reject(clearReq.error);
+    });
+    
+    // 存储新数据
+    for (let i = 0; i < photos.length; i++) {
+      await new Promise<void>((resolve, reject) => {
+        const putReq = store.put({ id: i, data: photos[i] });
+        putReq.onsuccess = () => resolve();
+        putReq.onerror = () => reject(putReq.error);
+      });
+    }
+    
+    // 存储照片数量
+    await new Promise<void>((resolve, reject) => {
+      const putReq = store.put({ id: 'count', data: photos.length });
+      putReq.onsuccess = () => resolve();
+      putReq.onerror = () => reject(putReq.error);
+    });
+    
+    db.close();
   } catch (e) {
-    console.error('Failed to save photos:', e);
+    console.error('Failed to save photos to IndexedDB:', e);
+    // 降级到 localStorage（可能会失败）
+    try {
+      localStorage.setItem(LOCAL_PHOTOS_KEY, JSON.stringify(photos));
+    } catch (e2) {
+      console.error('Failed to save photos to localStorage:', e2);
+    }
   }
 };
 
 /**
- * 获取本地保存的照片
+ * 获取本地保存的照片（从 IndexedDB）
  */
-export const getLocalPhotos = (): string[] => {
+export const getLocalPhotos = async (): Promise<string[]> => {
+  try {
+    // 优先从 IndexedDB 读取
+    const db = await openPhotosDB();
+    const tx = db.transaction('photos', 'readonly');
+    const store = tx.objectStore('photos');
+    
+    // 获取照片数量
+    const countData = await new Promise<{ id: string | number; data: number } | undefined>((resolve, reject) => {
+      const getReq = store.get('count');
+      getReq.onsuccess = () => resolve(getReq.result);
+      getReq.onerror = () => reject(getReq.error);
+    });
+    
+    if (!countData || typeof countData.data !== 'number') {
+      db.close();
+      // 尝试从 localStorage 迁移
+      return migratePhotosFromLocalStorage();
+    }
+    
+    const photos: string[] = [];
+    for (let i = 0; i < countData.data; i++) {
+      const photoData = await new Promise<{ id: number; data: string } | undefined>((resolve, reject) => {
+        const getReq = store.get(i);
+        getReq.onsuccess = () => resolve(getReq.result);
+        getReq.onerror = () => reject(getReq.error);
+      });
+      if (photoData) {
+        photos.push(photoData.data);
+      }
+    }
+    
+    db.close();
+    return photos;
+  } catch (e) {
+    console.error('Failed to get photos from IndexedDB:', e);
+    // 降级到 localStorage
+    try {
+      const data = localStorage.getItem(LOCAL_PHOTOS_KEY);
+      return data ? JSON.parse(data) : [];
+    } catch {
+      return [];
+    }
+  }
+};
+
+/**
+ * 打开照片数据库
+ */
+const openPhotosDB = (): Promise<IDBDatabase> => {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open('christmas_tree_db', 1);
+    
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => resolve(request.result);
+    
+    request.onupgradeneeded = (event) => {
+      const db = (event.target as IDBOpenDBRequest).result;
+      if (!db.objectStoreNames.contains('photos')) {
+        db.createObjectStore('photos', { keyPath: 'id' });
+      }
+    };
+  });
+};
+
+/**
+ * 从 localStorage 迁移照片到 IndexedDB
+ */
+const migratePhotosFromLocalStorage = async (): Promise<string[]> => {
   try {
     const data = localStorage.getItem(LOCAL_PHOTOS_KEY);
-    return data ? JSON.parse(data) : [];
+    if (!data) return [];
+    
+    const photos: string[] = JSON.parse(data);
+    if (photos.length > 0) {
+      // 迁移到 IndexedDB
+      await saveLocalPhotos(photos);
+      // 清除 localStorage 中的照片数据
+      localStorage.removeItem(LOCAL_PHOTOS_KEY);
+      console.log('Photos migrated from localStorage to IndexedDB');
+    }
+    return photos;
   } catch {
     return [];
   }

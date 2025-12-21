@@ -16,3 +16,4 @@ export { GiftStepOverlay } from './GiftStepOverlay';
 export { VoiceRecorder } from './VoiceRecorder';
 export { VoicePlayer } from './VoicePlayer';
 export { VisualEnhancementsSettings } from './VisualEnhancementsSettings';
+export { KeyboardShortcuts } from './KeyboardShortcuts';

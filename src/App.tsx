@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { Canvas } from '@react-three/fiber';
 import * as THREE from 'three';
-import { Experience, GestureController, SettingsPanel, TitleOverlay, Modal, LyricsDisplay, AvatarCropper, IntroOverlay, WelcomeTutorial, PrivacyNotice, CenterPhoto, photoScreenPositions, GiftStepOverlay, VoicePlayer } from './components';
+import { Experience, GestureController, SettingsPanel, TitleOverlay, Modal, LyricsDisplay, AvatarCropper, IntroOverlay, WelcomeTutorial, PrivacyNotice, CenterPhoto, photoScreenPositions, GiftStepOverlay, VoicePlayer, KeyboardShortcuts } from './components';
 import { CHRISTMAS_MUSIC_URL } from './config';
 import { isMobile, isTablet, fileToBase64, getDefaultSceneConfig, toggleFullscreen, isFullscreen, isFullscreenSupported } from './utils/helpers';
 import { useTimeline } from './hooks/useTimeline';
@@ -12,7 +12,7 @@ import {
 } from './lib/r2';
 import type { SceneState, SceneConfig, GestureConfig, GestureAction, MusicConfig } from './types';
 import { PRESET_MUSIC } from './types';
-import { Volume2, VolumeX, Camera, Settings, Wrench, Link, TreePine, Sparkles, Loader, HelpCircle, Shield, Heart, Type, Play, Maximize, Minimize } from 'lucide-react';
+import { Volume2, VolumeX, Camera, Settings, Wrench, Link, TreePine, Sparkles, Loader, HelpCircle, Shield, Heart, Type, Play, Maximize, Minimize, Keyboard } from 'lucide-react';
 
 // 深度合并配置对象
 function deepMergeConfig<T extends Record<string, unknown>>(target: T, source: Partial<T>): T {
@@ -88,6 +88,16 @@ export default function GrandTreeApp() {
 
   // 隐私政策弹窗
   const [showPrivacy, setShowPrivacy] = useState(false);
+
+  // 快捷键帮助弹窗（仅电脑版，首次访问自动显示）
+  const [showKeyboardHelp, setShowKeyboardHelp] = useState(() => {
+    if (isMobile()) return false;
+    try {
+      return !localStorage.getItem('keyboard_help_seen');
+    } catch {
+      return true;
+    }
+  });
 
   // Refs
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -165,23 +175,30 @@ export default function GrandTreeApp() {
   // 演示模式键盘监听：D 进入，Esc 退出（基础监听，不依赖其他函数）
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // 如果正在输入文字，不触发快捷键
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+        return;
+      }
+      
       // D 键进入演示模式
       if (e.key === 'd' || e.key === 'D') {
-        // 如果正在输入文字，不触发
-        if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
-          return;
-        }
         setDemoMode(true);
       }
-      // Esc 键退出演示模式（指针锁定退出时也会触发）
+      // Esc 键退出演示模式 / 关闭弹窗 / 取消选择照片
       if (e.key === 'Escape') {
         setDemoMode(false);
+        setShowKeyboardHelp(false);
+        setSelectedPhotoIndex(null);
+      }
+      // ? 键显示快捷键帮助（仅电脑版）
+      if ((e.key === '?' || (e.shiftKey && e.key === '/')) && !mobile) {
+        setShowKeyboardHelp(prev => !prev);
       }
     };
     
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [mobile]);
   
 
   
@@ -790,13 +807,67 @@ export default function GrandTreeApp() {
     setModalVisible(true);
   }, []);
 
+  // 通用快捷键（非演示模式也可用，仅电脑版）
+  useEffect(() => {
+    if (mobile) return;
+    
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      // 如果正在输入文字，不触发快捷键
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+        return;
+      }
+      // 如果有弹窗打开，不触发
+      if (showSettings || modalVisible || showTutorial || showPrivacy || showKeyboardHelp) {
+        return;
+      }
+      
+      // 空格键切换聚合/散开
+      if (e.key === ' ') {
+        e.preventDefault();
+        setSceneState(s => s === 'CHAOS' ? 'FORMED' : 'CHAOS');
+      }
+      // R 键重置视角
+      if (e.key === 'r' || e.key === 'R') {
+        setRefreshKey(k => k + 1);
+      }
+      // F 键全屏切换
+      if (e.key === 'f' || e.key === 'F') {
+        if (isFullscreenSupported()) {
+          toggleFullscreen();
+        }
+      }
+      // M 键切换音乐
+      if (e.key === 'm' || e.key === 'M') {
+        toggleMusic();
+      }
+      // H 键显示爱心
+      if (e.key === 'h' || e.key === 'H') {
+        triggerEffect('heart');
+      }
+      // T 键显示文字
+      if (e.key === 't' || e.key === 'T') {
+        triggerEffect('text');
+      }
+      // S 键打开设置
+      if (e.key === 's' || e.key === 'S') {
+        setShowSettings(true);
+      }
+    };
+    
+    document.addEventListener('keydown', handleGlobalKeyDown);
+    return () => document.removeEventListener('keydown', handleGlobalKeyDown);
+  }, [mobile, showSettings, modalVisible, showTutorial, showPrivacy, showKeyboardHelp, toggleMusic, triggerEffect]);
+
   // 加载本地保存的照片（配置已在 useState 初始化时加载）
   useEffect(() => {
-    const savedPhotos = getLocalPhotos();
-    if (savedPhotos.length > 0) {
-      setUploadedPhotos(savedPhotos);
-    }
-    setConfigLoaded(true);
+    const loadPhotos = async () => {
+      const savedPhotos = await getLocalPhotos();
+      if (savedPhotos.length > 0) {
+        setUploadedPhotos(savedPhotos);
+      }
+      setConfigLoaded(true);
+    };
+    loadPhotos();
   }, []);
 
   // 配置变化时保存到本地（只在初始加载完成后才保存，避免覆盖）
@@ -1147,6 +1218,11 @@ export default function GrandTreeApp() {
             <button onClick={() => setShowTutorial(true)} style={buttonStyle(false, mobile)} title="使用帮助">
               <HelpCircle size={18} />
             </button>
+            {!mobile && (
+              <button onClick={() => setShowKeyboardHelp(true)} style={buttonStyle(false, mobile)} title="快捷键 (?)">
+                <Keyboard size={18} />
+              </button>
+            )}
             <button onClick={() => setShowPrivacy(true)} style={buttonStyle(false, mobile)} title="隐私政策">
               <Shield size={18} />
             </button>
@@ -1280,6 +1356,11 @@ export default function GrandTreeApp() {
       {/* 隐私政策 */}
       {showPrivacy && (
         <PrivacyNotice onClose={() => setShowPrivacy(false)} />
+      )}
+
+      {/* 快捷键帮助（仅电脑版） */}
+      {showKeyboardHelp && !mobile && (
+        <KeyboardShortcuts onClose={() => setShowKeyboardHelp(false)} />
       )}
     </div>
   );
