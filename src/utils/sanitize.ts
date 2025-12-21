@@ -323,10 +323,10 @@ export const sanitizeShareConfig = (config: unknown): Record<string, unknown> =>
     const fog: Record<string, unknown> = {
       enabled: sanitizeBoolean(fo.enabled, true),
       opacity: sanitizeNumber(fo.opacity, 0.1, 1, 0.3),
-      count: sanitizeNumber(fo.count, 100, 5000, 1000),
-      size: sanitizeNumber(fo.size, 0.5, 5, 2),
-      spread: sanitizeNumber(fo.spread, 0.5, 3, 1.2),
-      height: sanitizeNumber(fo.height, 0.5, 3, 1)
+      count: sanitizeNumber(fo.count, 100, 5000, 800),
+      size: sanitizeNumber(fo.size, 0.1, 3, 0.8),
+      spread: sanitizeNumber(fo.spread, 0.5, 3, 1),
+      height: sanitizeNumber(fo.height, 0.5, 3, 1.5)
     };
     if (typeof fo.color === 'string' && /^#[0-9A-Fa-f]{6}$/.test(fo.color)) {
       fog.color = fo.color;

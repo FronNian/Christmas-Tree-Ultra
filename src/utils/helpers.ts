@@ -401,7 +401,7 @@ export const getDefaultSceneConfig = (forceMinimal = false): Record<string, unkn
       enabled: true, 
       count: useMinimal ? 15 : 50 
     },
-    fog: { enabled: true, opacity: 0.3 },
+    fog: { enabled: true, opacity: 0.3, count: 800, size: 0.8, spread: 1, height: 1.5 },
     music: {
       selected: 'christmas-stars',
       volume: 0.5

@@ -107,7 +107,7 @@ export const Experience = ({
     title: config.title || { enabled: true, text: 'Merry Christmas', size: 48 },
     giftPile: config.giftPile || { enabled: true, count: 18 },
     ribbons: config.ribbons || { enabled: true, count: 50 },
-    fog: config.fog || { enabled: true, opacity: 0.3 }
+    fog: config.fog || { enabled: true, opacity: 0.3, count: 800, size: 0.8, spread: 1, height: 1.5 }
   };
 
   useFrame((_, delta) => {
