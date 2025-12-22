@@ -155,7 +155,7 @@ export const uploadShare = async (
     if (sizeMB > MAX_SHARE_SIZE_MB) {
       return {
         success: false,
-        error: `分享数据过大（约 ${sizeMB.toFixed(1)} MB），请减少照片数量或压缩图片，控制在 ${MAX_SHARE_SIZE_MB}MB 内后重试。`
+        error: `分享数据过大（约 ${sizeMB.toFixed(1)} MB），请减少照片数量或压缩图片（推荐使用 https://imagestool.com/zh_CN/compress-images 进行压缩），控制在 ${MAX_SHARE_SIZE_MB}MB 内后重试。`
       };
     }
 
@@ -230,7 +230,10 @@ export const updateShare = async (
 
     const sizeMB = getShareSizeMB(updatedData);
     if (sizeMB > MAX_SHARE_SIZE_MB) {
-      return { success: false, error: `分享数据过大（约 ${sizeMB.toFixed(1)} MB），请减少照片数量或压缩图片后再更新（上限 ${MAX_SHARE_SIZE_MB}MB）。` };
+      return {
+        success: false,
+        error: `分享数据过大（约 ${sizeMB.toFixed(1)} MB），请减少照片数量或压缩图片（推荐使用 https://imagestool.com/zh_CN/compress-images 进行压缩）后再更新（上限 ${MAX_SHARE_SIZE_MB}MB）。`
+      };
     }
 
     const response = await fetch(`${R2_API_URL}/shares/${shareId}.json`, {
