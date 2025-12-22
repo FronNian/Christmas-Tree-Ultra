@@ -15,3 +15,10 @@ export { ShootingStars } from './ShootingStars';
 export { Aurora } from './Aurora';
 export { Fireworks } from './Fireworks';
 export { GiftBox } from './GiftBox';
+export { 
+  getGeometriesForStyle, 
+  DECORATION_STYLE_NAMES, 
+  DECORATION_STYLE_DESCRIPTIONS,
+  DECORATION_MATERIAL_NAMES,
+  disposeGeometryCache 
+} from './DecorationGeometries';

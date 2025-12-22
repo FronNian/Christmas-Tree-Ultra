@@ -320,6 +320,7 @@ export const Experience = ({
                 customColors={config.elements?.colors}
                 decorationTypes={config.elements?.types}
                 twinkle={config.elements?.twinkle}
+                styleConfig={config.elements?.styleConfig}
                 count={safeConfig.elements.count}
                 easing={config.animation?.easing}
                 speed={config.animation?.speed}

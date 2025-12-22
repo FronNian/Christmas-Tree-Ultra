@@ -2,7 +2,8 @@ import { useRef, useMemo, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { CONFIG } from '../../config';
-import type { SceneState, AnimationEasing, ScatterShape, GatherShape, DecorationColors, DecorationTypes, DecorationTwinkle } from '../../types';
+import type { SceneState, AnimationEasing, ScatterShape, GatherShape, DecorationColors, DecorationTypes, DecorationTwinkle, DecorationStyleConfig } from '../../types';
+import { getGeometriesForStyle } from './DecorationGeometries';
 
 // 缓动函数
 const easingFunctions: Record<AnimationEasing, (t: number) => number> = {
@@ -141,6 +142,16 @@ const DEFAULT_TYPES: DecorationTypes = {
   cylinder: true
 };
 
+// 默认样式配置
+const DEFAULT_STYLE_CONFIG: DecorationStyleConfig = {
+  style: 'classic',
+  material: 'standard',
+  transparency: 0,
+  metalness: 0.4,
+  roughness: 0.3,
+  emissiveIntensity: 0.2
+};
+
 interface ChristmasElementsProps {
   state: SceneState;
   customImages?: {
@@ -151,6 +162,7 @@ interface ChristmasElementsProps {
   customColors?: DecorationColors;
   decorationTypes?: DecorationTypes;
   twinkle?: DecorationTwinkle;
+  styleConfig?: DecorationStyleConfig;
   count?: number;
   easing?: AnimationEasing;
   speed?: number;
@@ -168,6 +180,7 @@ export const ChristmasElements = ({
   customColors,
   decorationTypes,
   twinkle,
+  styleConfig,
   count = CONFIG.counts.elements,
   easing = 'easeInOut', 
   speed = 1,
@@ -179,8 +192,16 @@ export const ChristmasElements = ({
   // 闪烁配置：默认启用，速度1
   const twinkleEnabled = twinkle?.enabled ?? true;
   const twinkleSpeed = twinkle?.speed ?? 1;
+  const twinkleFlashColor = twinkle?.flashColor ?? '#FFFFFF';  // 闪烁颜色，默认白色
+  const twinkleBaseColor = twinkle?.baseColor;  // 基础发光颜色，默认使用装饰本身颜色
   const actualHeight = treeHeight ?? CONFIG.tree.height;
   const actualRadius = treeRadius ?? CONFIG.tree.radius;
+  
+  // 合并样式配置
+  const finalStyleConfig = useMemo(() => ({
+    ...DEFAULT_STYLE_CONFIG,
+    ...styleConfig
+  }), [styleConfig]);
   
   // 合并装饰类型配置
   const types = useMemo(() => ({
@@ -188,14 +209,19 @@ export const ChristmasElements = ({
     ...decorationTypes
   }), [decorationTypes]);
   
-  // 获取启用的装饰类型列表 (0=box, 1=sphere, 2=cylinder)
+  // 根据样式获取几何体
+  const styleGeometries = useMemo(() => {
+    return getGeometriesForStyle(finalStyleConfig.style);
+  }, [finalStyleConfig.style]);
+  
+  // 获取启用的装饰类型列表 (0=type1, 1=type2, 2=type3)
   const enabledTypes = useMemo(() => {
     const result: number[] = [];
     if (types.box) result.push(0);
     if (types.sphere) result.push(1);
     if (types.cylinder) result.push(2);
-    // 如果全部关闭，默认启用球体
-    if (result.length === 0) result.push(1);
+    // 如果全部关闭，默认启用第一种
+    if (result.length === 0) result.push(0);
     return result;
   }, [types]);
   
@@ -243,9 +269,10 @@ export const ChristmasElements = ({
     return result;
   }, [customImages?.box, customImages?.sphere, customImages?.cylinder]);
 
-  const boxGeometry = useMemo(() => new THREE.BoxGeometry(0.8, 0.8, 0.8), []);
-  const sphereGeometry = useMemo(() => new THREE.SphereGeometry(0.5, 16, 16), []);
-  const caneGeometry = useMemo(() => new THREE.CylinderGeometry(0.15, 0.15, 1.2, 8), []);
+  // 使用样式几何体（不再使用固定的 box/sphere/cane）
+  const geometry0 = styleGeometries[0];
+  const geometry1 = styleGeometries[1];
+  const geometry2 = styleGeometries[2];
 
   // 基础数据（不依赖 scatterShape，只在 count 或 gatherShape 或 colors 或尺寸或类型变化时重新生成）
   const data = useMemo(() => {
@@ -428,19 +455,25 @@ export const ChristmasElements = ({
         child.rotation.y += delta * objData.rotationSpeed.y * 0.5;
         child.rotation.z += delta * objData.rotationSpeed.z * 0.5;
         
-        // 更新闪烁发光效果：白光闪烁
+        // 更新闪烁发光效果
         const mesh = child as THREE.Mesh;
         const mat = mesh.material as THREE.MeshStandardMaterial;
         if (mat && mat.emissiveIntensity !== undefined) {
           // 基础发光 + 闪烁时大幅提亮
-          mat.emissiveIntensity = 0.2 + flashIntensity * 1.5;
-          // 闪烁时混入白色
+          const baseEmissive = finalStyleConfig.emissiveIntensity;
+          mat.emissiveIntensity = baseEmissive + flashIntensity * 1.5;
+          
+          // 确定基础颜色（未闪烁时的颜色）
+          const baseEmissiveColor = twinkleBaseColor 
+            ? new THREE.Color(twinkleBaseColor) 
+            : new THREE.Color(objData.color);
+          
+          // 闪烁时混入闪烁颜色
           if (whiteFlashAmount > 0) {
-            const baseColor = new THREE.Color(objData.color);
-            const whiteColor = new THREE.Color('#FFFFFF');
-            mat.emissive.copy(baseColor.lerp(whiteColor, whiteFlashAmount));
+            const flashColor = new THREE.Color(twinkleFlashColor);
+            mat.emissive.copy(baseEmissiveColor.clone().lerp(flashColor, whiteFlashAmount));
           } else {
-            mat.emissive.set(objData.color);
+            mat.emissive.copy(baseEmissiveColor);
           }
         }
       }
@@ -474,8 +507,8 @@ export const ChristmasElements = ({
       {data.map((obj, i) => {
         const initialPos = getInitialPosition(i);
         
-        // 使用自定义图片
-        if (useCustomImage(obj.type)) {
+        // 使用自定义图片（仅经典样式支持）
+        if (finalStyleConfig.style === 'classic' && useCustomImage(obj.type)) {
           const texture = getTexture(obj.type);
           return (
             <sprite 
@@ -493,11 +526,36 @@ export const ChristmasElements = ({
           );
         }
         
-        // 使用默认几何体
+        // 使用样式几何体
         let geometry;
-        if (obj.type === 0) geometry = boxGeometry;
-        else if (obj.type === 1) geometry = sphereGeometry;
-        else geometry = caneGeometry;
+        if (obj.type === 0) geometry = geometry0;
+        else if (obj.type === 1) geometry = geometry1;
+        else geometry = geometry2;
+        
+        // 根据材质类型创建不同的材质属性
+        const materialProps = {
+          color: obj.color,
+          roughness: finalStyleConfig.roughness,
+          metalness: finalStyleConfig.metalness,
+          emissive: obj.color,
+          emissiveIntensity: finalStyleConfig.emissiveIntensity,
+          transparent: finalStyleConfig.transparency > 0 || finalStyleConfig.material === 'glass',
+          opacity: 1 - finalStyleConfig.transparency,
+          ...(finalStyleConfig.material === 'glass' && {
+            transmission: 0.6,
+            thickness: 0.5,
+            roughness: 0.1,
+            metalness: 0,
+            ior: 1.5
+          }),
+          ...(finalStyleConfig.material === 'metallic' && {
+            metalness: 0.9,
+            roughness: 0.1
+          }),
+          ...(finalStyleConfig.material === 'emissive' && {
+            emissiveIntensity: finalStyleConfig.emissiveIntensity * 2
+          })
+        };
         
         return (
           <mesh 
@@ -507,7 +565,11 @@ export const ChristmasElements = ({
             geometry={geometry} 
             rotation={obj.chaosRotation}
           >
-            <meshStandardMaterial color={obj.color} roughness={0.3} metalness={0.4} emissive={obj.color} emissiveIntensity={0.2} />
+            {finalStyleConfig.material === 'glass' ? (
+              <meshPhysicalMaterial {...materialProps} />
+            ) : (
+              <meshStandardMaterial {...materialProps} />
+            )}
           </mesh>
         );
       })}

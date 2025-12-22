@@ -1,15 +1,16 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
-import type { SceneConfig, GestureConfig, GestureAction, MusicConfig, AnimationEasing, ScatterShape, GatherShape, DecorationColors } from '../../types';
+import type { SceneConfig, GestureConfig, GestureAction, MusicConfig, AnimationEasing, ScatterShape, GatherShape, DecorationColors, DecorationStyle, DecorationMaterial, DecorationStyleConfig } from '../../types';
 import { PRESET_MUSIC } from '../../types';
 import { isMobile } from '../../utils/helpers';
 import { TITLE_FONTS } from './TitleOverlay';
 import { TimelineEditor } from './TimelineEditor';
 import { VisualEnhancementsSettings } from './VisualEnhancementsSettings';
+import { DECORATION_STYLE_NAMES, DECORATION_STYLE_DESCRIPTIONS, DECORATION_MATERIAL_NAMES } from '../three/DecorationGeometries';
 import { 
   TreePine, Sparkles, Heart, Type, X, Settings,
   TreeDeciduous, Lightbulb, Gift, Ribbon, Snowflake, CloudFog, Star, Rainbow, Bot, Hand, Music, Upload, Zap, Palette,
-  ChevronDown, ChevronRight, Film, Image
+  ChevronDown, ChevronRight, Film, Image, Gem
 } from 'lucide-react';
 
 // 可折叠分组组件
@@ -317,6 +318,15 @@ const COLOR_PRESETS = [
   { name: '金色奢华', colors: { primary: '#FFD700', secondary: '#FFA000', accent: '#FFECB3', candy1: '#FF8F00', candy2: '#FFF8E1' } },
   { name: '紫色神秘', colors: { primary: '#9C27B0', secondary: '#E1BEE7', accent: '#7B1FA2', candy1: '#AB47BC', candy2: '#F3E5F5' } },
 ];
+
+// 装饰样式对应的类型名称
+const STYLE_TYPE_NAMES: Record<DecorationStyle, [string, string, string]> = {
+  classic: ['📦 方块', '🔴 球体', '🍬 糖果棒'],
+  crystal: ['💎 八面体', '🔷 菱形', '🔮 棱柱'],
+  gem: ['💍 钻石', '💚 祖母绿', '❤️ 心形'],
+  nature: ['🌰 松果', '❄️ 雪花', '🧊 冰晶'],
+  modern: ['⭐ 星形', '🔶 多面体', '⭕ 环形']
+};
 
 // 动画缓动选项
 const animationEasingOptions: { value: AnimationEasing; label: string; desc: string }[] = [
@@ -1020,68 +1030,249 @@ export const SettingsPanel = ({
         <div style={labelStyle}><span>数量: {config.elements.count || 500}</span></div>
         <input type="range" min="100" max="1000" step="50" value={config.elements.count || 500} onChange={e => onChange({ ...config, elements: { ...config.elements, count: Number(e.target.value) } })} style={sliderStyle} />
         
+        {/* 装饰样式选择 */}
+        <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+          <div style={{ ...labelStyle, marginBottom: '8px' }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Gem size={12} /> 装饰样式</span>
+          </div>
+          
+          {/* 样式选择按钮 */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '10px' }}>
+            {(Object.keys(DECORATION_STYLE_NAMES) as DecorationStyle[]).map(style => (
+              <button
+                key={style}
+                onClick={() => onChange({
+                  ...config,
+                  elements: {
+                    ...config.elements,
+                    styleConfig: {
+                      style,
+                      material: config.elements.styleConfig?.material || 'standard',
+                      transparency: config.elements.styleConfig?.transparency || 0,
+                      metalness: config.elements.styleConfig?.metalness || 0.4,
+                      roughness: config.elements.styleConfig?.roughness || 0.3,
+                      emissiveIntensity: config.elements.styleConfig?.emissiveIntensity || 0.2
+                    }
+                  }
+                })}
+                style={{
+                  padding: '6px 10px',
+                  background: (config.elements.styleConfig?.style || 'classic') === style 
+                    ? 'rgba(255,215,0,0.3)' 
+                    : 'rgba(255,255,255,0.1)',
+                  border: (config.elements.styleConfig?.style || 'classic') === style 
+                    ? '1px solid #FFD700' 
+                    : '1px solid rgba(255,255,255,0.2)',
+                  borderRadius: '4px',
+                  color: '#fff',
+                  fontSize: '11px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: '2px',
+                  minWidth: '70px'
+                }}
+              >
+                <span>{DECORATION_STYLE_NAMES[style]}</span>
+                <span style={{ fontSize: '9px', color: '#888' }}>{DECORATION_STYLE_DESCRIPTIONS[style]}</span>
+              </button>
+            ))}
+          </div>
+          
+          {/* 材质类型 */}
+          <div style={{ ...labelStyle, marginTop: '8px' }}><span>材质效果</span></div>
+          <select
+            value={config.elements.styleConfig?.material || 'standard'}
+            onChange={e => onChange({
+              ...config,
+              elements: {
+                ...config.elements,
+                styleConfig: {
+                  style: config.elements.styleConfig?.style || 'classic',
+                  material: e.target.value as DecorationMaterial,
+                  transparency: config.elements.styleConfig?.transparency || 0,
+                  metalness: config.elements.styleConfig?.metalness || 0.4,
+                  roughness: config.elements.styleConfig?.roughness || 0.3,
+                  emissiveIntensity: config.elements.styleConfig?.emissiveIntensity || 0.2
+                }
+              }
+            })}
+            style={{
+              width: '100%',
+              padding: '8px',
+              background: 'rgba(255,255,255,0.1)',
+              border: '1px solid rgba(255,215,0,0.3)',
+              borderRadius: '4px',
+              color: '#fff',
+              fontSize: '12px',
+              cursor: 'pointer',
+              marginBottom: '8px',
+              boxSizing: 'border-box'
+            }}
+          >
+            {(Object.keys(DECORATION_MATERIAL_NAMES) as DecorationMaterial[]).map(mat => (
+              <option key={mat} value={mat} style={{ background: '#222' }}>
+                {DECORATION_MATERIAL_NAMES[mat]}
+              </option>
+            ))}
+          </select>
+          
+          {/* 透明度 */}
+          <div style={{ ...labelStyle, marginTop: '8px' }}>
+            <span>透明度: {Math.round((config.elements.styleConfig?.transparency || 0) * 100)}%</span>
+          </div>
+          <input
+            type="range"
+            min="0"
+            max="0.8"
+            step="0.1"
+            value={config.elements.styleConfig?.transparency || 0}
+            onChange={e => onChange({
+              ...config,
+              elements: {
+                ...config.elements,
+                styleConfig: {
+                  ...config.elements.styleConfig,
+                  style: config.elements.styleConfig?.style || 'classic',
+                  material: config.elements.styleConfig?.material || 'standard',
+                  transparency: Number(e.target.value),
+                  metalness: config.elements.styleConfig?.metalness || 0.4,
+                  roughness: config.elements.styleConfig?.roughness || 0.3,
+                  emissiveIntensity: config.elements.styleConfig?.emissiveIntensity || 0.2
+                }
+              }
+            })}
+            style={sliderStyle}
+          />
+          
+          {/* 金属度 */}
+          <div style={{ ...labelStyle, marginTop: '8px' }}>
+            <span>金属光泽: {Math.round((config.elements.styleConfig?.metalness || 0.4) * 100)}%</span>
+          </div>
+          <input
+            type="range"
+            min="0"
+            max="1"
+            step="0.1"
+            value={config.elements.styleConfig?.metalness || 0.4}
+            onChange={e => onChange({
+              ...config,
+              elements: {
+                ...config.elements,
+                styleConfig: {
+                  ...config.elements.styleConfig,
+                  style: config.elements.styleConfig?.style || 'classic',
+                  material: config.elements.styleConfig?.material || 'standard',
+                  transparency: config.elements.styleConfig?.transparency || 0,
+                  metalness: Number(e.target.value),
+                  roughness: config.elements.styleConfig?.roughness || 0.3,
+                  emissiveIntensity: config.elements.styleConfig?.emissiveIntensity || 0.2
+                }
+              }
+            })}
+            style={sliderStyle}
+          />
+          
+          {/* 发光强度 */}
+          <div style={{ ...labelStyle, marginTop: '8px' }}>
+            <span>发光强度: {(config.elements.styleConfig?.emissiveIntensity || 0.2).toFixed(1)}</span>
+          </div>
+          <input
+            type="range"
+            min="0"
+            max="2"
+            step="0.1"
+            value={config.elements.styleConfig?.emissiveIntensity || 0.2}
+            onChange={e => onChange({
+              ...config,
+              elements: {
+                ...config.elements,
+                styleConfig: {
+                  ...config.elements.styleConfig,
+                  style: config.elements.styleConfig?.style || 'classic',
+                  material: config.elements.styleConfig?.material || 'standard',
+                  transparency: config.elements.styleConfig?.transparency || 0,
+                  metalness: config.elements.styleConfig?.metalness || 0.4,
+                  roughness: config.elements.styleConfig?.roughness || 0.3,
+                  emissiveIntensity: Number(e.target.value)
+                }
+              }
+            })}
+            style={sliderStyle}
+          />
+        </div>
+        
         {/* 装饰类型开关 */}
-        <p style={{ fontSize: '10px', color: '#888', margin: '8px 0 6px 0' }}>
+        <p style={{ fontSize: '10px', color: '#888', margin: '12px 0 6px 0' }}>
           装饰类型（关闭后由其他类型替代）
         </p>
         <div style={{ display: 'flex', gap: '12px', marginBottom: '8px', flexWrap: 'wrap' }}>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', color: '#ccc' }}>
-            <input 
-              type="checkbox" 
-              checked={config.elements.types?.box ?? true} 
-              onChange={e => onChange({ 
-                ...config, 
-                elements: { 
-                  ...config.elements, 
-                  types: { 
-                    box: e.target.checked, 
-                    sphere: config.elements.types?.sphere ?? true, 
-                    cylinder: config.elements.types?.cylinder ?? true 
-                  } 
-                } 
-              })} 
-              style={{ accentColor: '#FFD700' }} 
-            />
-            📦 方块
-          </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', color: '#ccc' }}>
-            <input 
-              type="checkbox" 
-              checked={config.elements.types?.sphere ?? true} 
-              onChange={e => onChange({ 
-                ...config, 
-                elements: { 
-                  ...config.elements, 
-                  types: { 
-                    box: config.elements.types?.box ?? true, 
-                    sphere: e.target.checked, 
-                    cylinder: config.elements.types?.cylinder ?? true 
-                  } 
-                } 
-              })} 
-              style={{ accentColor: '#FFD700' }} 
-            />
-            🔴 球体
-          </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', color: '#ccc' }}>
-            <input 
-              type="checkbox" 
-              checked={config.elements.types?.cylinder ?? true} 
-              onChange={e => onChange({ 
-                ...config, 
-                elements: { 
-                  ...config.elements, 
-                  types: { 
-                    box: config.elements.types?.box ?? true, 
-                    sphere: config.elements.types?.sphere ?? true, 
-                    cylinder: e.target.checked 
-                  } 
-                } 
-              })} 
-              style={{ accentColor: '#FFD700' }} 
-            />
-            🍬 糖果棒
-          </label>
+          {(() => {
+            const currentStyle = config.elements.styleConfig?.style || 'classic';
+            const typeNames = STYLE_TYPE_NAMES[currentStyle];
+            return (
+              <>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', color: '#ccc' }}>
+                  <input 
+                    type="checkbox" 
+                    checked={config.elements.types?.box ?? true} 
+                    onChange={e => onChange({ 
+                      ...config, 
+                      elements: { 
+                        ...config.elements, 
+                        types: { 
+                          box: e.target.checked, 
+                          sphere: config.elements.types?.sphere ?? true, 
+                          cylinder: config.elements.types?.cylinder ?? true 
+                        } 
+                      } 
+                    })} 
+                    style={{ accentColor: '#FFD700' }} 
+                  />
+                  {typeNames[0]}
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', color: '#ccc' }}>
+                  <input 
+                    type="checkbox" 
+                    checked={config.elements.types?.sphere ?? true} 
+                    onChange={e => onChange({ 
+                      ...config, 
+                      elements: { 
+                        ...config.elements, 
+                        types: { 
+                          box: config.elements.types?.box ?? true, 
+                          sphere: e.target.checked, 
+                          cylinder: config.elements.types?.cylinder ?? true 
+                        } 
+                      } 
+                    })} 
+                    style={{ accentColor: '#FFD700' }} 
+                  />
+                  {typeNames[1]}
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', color: '#ccc' }}>
+                  <input 
+                    type="checkbox" 
+                    checked={config.elements.types?.cylinder ?? true} 
+                    onChange={e => onChange({ 
+                      ...config, 
+                      elements: { 
+                        ...config.elements, 
+                        types: { 
+                          box: config.elements.types?.box ?? true, 
+                          sphere: config.elements.types?.sphere ?? true, 
+                          cylinder: e.target.checked 
+                        } 
+                      } 
+                    })} 
+                    style={{ accentColor: '#FFD700' }} 
+                  />
+                  {typeNames[2]}
+                </label>
+              </>
+            );
+          })()}
         </div>
         
         {/* 闪烁效果配置 */}
@@ -1098,6 +1289,7 @@ export const SettingsPanel = ({
               elements: { 
                 ...config.elements, 
                 twinkle: { 
+                  ...config.elements.twinkle,
                   enabled: e.target.checked, 
                   speed: config.elements.twinkle?.speed ?? 1 
                 } 
@@ -1122,6 +1314,7 @@ export const SettingsPanel = ({
                 elements: { 
                   ...config.elements, 
                   twinkle: { 
+                    ...config.elements.twinkle,
                     enabled: config.elements.twinkle?.enabled ?? true, 
                     speed: Number(e.target.value) 
                   } 
@@ -1132,6 +1325,79 @@ export const SettingsPanel = ({
             <p style={{ fontSize: '9px', color: '#666', margin: '2px 0 0 0' }}>
               0.5x 慢闪 | 1x 正常 | 3x 快闪
             </p>
+            
+            {/* 闪烁颜色配置 */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '10px' }}>
+              <div>
+                <span style={{ fontSize: '10px', color: '#888' }}>闪烁颜色</span>
+                <ColorPicker
+                  value={config.elements.twinkle?.flashColor || '#FFFFFF'}
+                  onChange={color => onChange({
+                    ...config,
+                    elements: {
+                      ...config.elements,
+                      twinkle: {
+                        ...config.elements.twinkle,
+                        enabled: config.elements.twinkle?.enabled ?? true,
+                        speed: config.elements.twinkle?.speed ?? 1,
+                        flashColor: color
+                      }
+                    }
+                  })}
+                />
+              </div>
+              <div>
+                <span style={{ fontSize: '10px', color: '#888' }}>基础发光</span>
+                <ColorPicker
+                  value={config.elements.twinkle?.baseColor || '#FFD700'}
+                  onChange={color => onChange({
+                    ...config,
+                    elements: {
+                      ...config.elements,
+                      twinkle: {
+                        ...config.elements.twinkle,
+                        enabled: config.elements.twinkle?.enabled ?? true,
+                        speed: config.elements.twinkle?.speed ?? 1,
+                        baseColor: color
+                      }
+                    }
+                  })}
+                />
+              </div>
+            </div>
+            <p style={{ fontSize: '9px', color: '#666', margin: '4px 0 0 0' }}>
+              闪烁颜色：闪亮时的颜色 | 基础发光：未闪烁时的颜色
+            </p>
+            
+            {/* 重置颜色按钮 */}
+            {(config.elements.twinkle?.flashColor || config.elements.twinkle?.baseColor) && (
+              <button
+                onClick={() => onChange({
+                  ...config,
+                  elements: {
+                    ...config.elements,
+                    twinkle: {
+                      enabled: config.elements.twinkle?.enabled ?? true,
+                      speed: config.elements.twinkle?.speed ?? 1,
+                      flashColor: undefined,
+                      baseColor: undefined
+                    }
+                  }
+                })}
+                style={{
+                  marginTop: '6px',
+                  padding: '4px 8px',
+                  background: 'rgba(255,100,100,0.2)',
+                  border: '1px solid rgba(255,100,100,0.3)',
+                  borderRadius: '4px',
+                  color: '#ff6666',
+                  fontSize: '10px',
+                  cursor: 'pointer'
+                }}
+              >
+                重置为默认颜色
+              </button>
+            )}
           </>
         )}
         

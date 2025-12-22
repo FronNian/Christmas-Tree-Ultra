@@ -105,10 +105,37 @@ export interface DecorationTypes {
   cylinder: boolean;  // 圆柱装饰（糖果棒）
 }
 
+// 装饰样式类型
+export type DecorationStyle = 
+  | 'classic'    // 经典：方块、球体、糖果棒
+  | 'crystal'    // 水晶：八面体、菱形、棱柱
+  | 'gem'        // 宝石：钻石、祖母绿、心形
+  | 'nature'     // 自然：松果、雪花、冰晶
+  | 'modern';    // 现代：星形、多面体、环形
+
+// 装饰材质类型
+export type DecorationMaterial = 
+  | 'standard'      // 标准材质
+  | 'glass'         // 玻璃/透明
+  | 'metallic'      // 金属光泽
+  | 'emissive';     // 自发光
+
+// 装饰样式配置
+export interface DecorationStyleConfig {
+  style: DecorationStyle;           // 装饰样式
+  material: DecorationMaterial;     // 材质类型
+  transparency: number;             // 透明度 0-1
+  metalness: number;                // 金属度 0-1
+  roughness: number;                // 粗糙度 0-1
+  emissiveIntensity: number;        // 发光强度 0-2
+}
+
 // 装饰闪烁配置
 export interface DecorationTwinkle {
   enabled: boolean;   // 是否启用闪烁
   speed: number;      // 闪烁频率 0.5-3（1为默认，数值越大闪烁越快）
+  flashColor?: string;  // 闪烁时的颜色（默认白色）
+  baseColor?: string;   // 未闪烁时的基础发光颜色（默认使用装饰本身颜色）
 }
 
 // 彩灯颜色配置
@@ -202,6 +229,7 @@ export interface SceneConfig {
     count: number;
     types?: DecorationTypes;  // 装饰类型开关（默认全开）
     twinkle?: DecorationTwinkle;  // 闪烁配置
+    styleConfig?: DecorationStyleConfig;  // 装饰样式配置
     customImages?: {
       box?: string;      // 替换方块的 PNG 图片 (base64)
       sphere?: string;   // 替换球体的 PNG 图片 (base64)
