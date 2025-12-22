@@ -23,7 +23,10 @@ export type GestureAction =
   | 'screenshot'     // 截图
   | 'reset'          // 重置视角
   | 'zoomIn'         // 放大（拉近）
-  | 'zoomOut';       // 缩小（拉远）
+  | 'zoomOut'        // 缩小（拉远）
+  | 'themeClassic'   // 主题：经典绿红金
+  | 'themeIcy'       // 主题：冰蓝银白
+  | 'themeCandy';    // 主题：糖果粉红
 
 // 手势配置（基于 HandLandmarker 自定义识别）
 export interface GestureConfig {
@@ -305,6 +308,7 @@ export interface SceneConfig {
   };
   preloadText?: boolean;   // 分享链接打开时先显示文字效果（时间轴模式下忽略）
   timeline?: TimelineConfig; // 时间轴/故事线配置
+  themeLabel?: string;     // 当前主题标签（自定义或预设名称）
 }
 
 // 照片屏幕位置

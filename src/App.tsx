@@ -3,6 +3,7 @@ import { Canvas } from '@react-three/fiber';
 import * as THREE from 'three';
 import { Experience, GestureController, SettingsPanel, TitleOverlay, Modal, LyricsDisplay, AvatarCropper, IntroOverlay, WelcomeTutorial, PrivacyNotice, CenterPhoto, photoScreenPositions, GiftStepOverlay, VoicePlayer, KeyboardShortcuts, PhotoManager } from './components';
 import { CHRISTMAS_MUSIC_URL } from './config';
+import { THEME_PRESETS, type ThemeKey } from './config/themes';
 import { isMobile, isTablet, fileToBase64, getDefaultSceneConfig, toggleFullscreen, isFullscreen, isFullscreenSupported } from './utils/helpers';
 import { useTimeline } from './hooks/useTimeline';
 import { 
@@ -404,6 +405,18 @@ export default function GrandTreeApp() {
     }
   }, []);
 
+  // 应用预设主题（深度合并，不覆盖照片等用户数据）
+  const applyTheme = useCallback((theme: ThemeKey) => {
+    const preset = THEME_PRESETS[theme];
+    if (!preset) return;
+    setSceneConfig((prev) =>
+      deepMergeConfig(
+        prev as unknown as Record<string, unknown>,
+        { ...preset, themeLabel: theme } as unknown as Record<string, unknown>
+      ) as unknown as SceneConfig
+    );
+  }, []);
+
   // 执行手势动作
   const executeGestureAction = useCallback((action: GestureAction) => {
     const effectConfig = sceneConfig.gestureEffect || {
@@ -476,11 +489,21 @@ export default function GrandTreeApp() {
       case 'reset':
         setSceneState('FORMED');
         setRotationSpeed(0);
+        setZoomDelta(0);
+        break;
+      case 'themeClassic':
+        applyTheme('classic');
+        break;
+      case 'themeIcy':
+        applyTheme('icy');
+        break;
+      case 'themeCandy':
+        applyTheme('candy');
         break;
       default:
         break;
     }
-  }, [sceneConfig, uploadedPhotos, startTextEffect]);
+  }, [sceneConfig, uploadedPhotos, startTextEffect, applyTheme]);
 
   // 手动触发特效（按钮触发，支持切换开关）
   const triggerEffect = useCallback((effect: 'heart' | 'text') => {

@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import type { SceneConfig, GestureConfig, GestureAction, MusicConfig, AnimationEasing, ScatterShape, GatherShape, DecorationColors, DecorationStyle, DecorationMaterial } from '../../types';
 import { PRESET_MUSIC } from '../../types';
-import { isMobile } from '../../utils/helpers';
+import { isMobile, getDefaultSceneConfig } from '../../utils/helpers';
+import { THEME_PRESETS, type ThemeKey } from '../../config/themes';
 import { TITLE_FONTS } from './TitleOverlay';
 import { TimelineEditor } from './TimelineEditor';
 import { VisualEnhancementsSettings } from './VisualEnhancementsSettings';
@@ -368,7 +369,10 @@ const gestureActionOptions: { value: GestureAction; label: string }[] = [
   { value: 'screenshot', label: '📸 截图' },
   { value: 'reset', label: '🔄 重置' },
   { value: 'zoomIn', label: '🔍 放大' },
-  { value: 'zoomOut', label: '🔎 缩小' }
+  { value: 'zoomOut', label: '🔎 缩小' },
+  { value: 'themeClassic', label: '🎄 主题：经典' },
+  { value: 'themeIcy', label: '❄️ 主题：冰蓝' },
+  { value: 'themeCandy', label: '🍭 主题：糖果' }
 ];
 
 // 手势名称映射
@@ -426,6 +430,27 @@ export const SettingsPanel = ({
     fog: config.fog || { enabled: true, opacity: 0.3 },
     gestures: config.gestures || defaultGestures,
     music: config.music || defaultMusic
+  };
+
+  // 主题合并（深度合并，不影响照片/时间轴等数据）
+  const mergeConfig = (target: Record<string, unknown>, patch: Record<string, unknown>): Record<string, unknown> => {
+    const result: Record<string, unknown> = { ...target };
+    Object.keys(patch).forEach((key) => {
+      const src = patch[key];
+      const dst = (target as Record<string, unknown>)[key];
+      if (src && typeof src === 'object' && !Array.isArray(src)) {
+        result[key] = mergeConfig((dst as Record<string, unknown>) || {}, src as Record<string, unknown>);
+      } else {
+        result[key] = src;
+      }
+    });
+    return result;
+  };
+
+  const applyThemePreset = (theme: ThemeKey) => {
+    const preset = THEME_PRESETS[theme];
+    if (!preset) return;
+    onChange(mergeConfig(config as unknown as Record<string, unknown>, { ...preset, themeLabel: theme } as Record<string, unknown>) as unknown as SceneConfig);
   };
 
   // 检测是否为平板（宽度 >= 768px 且 <= 1024px）
@@ -493,6 +518,110 @@ export const SettingsPanel = ({
     accentColor: '#FFD700',
     cursor: 'pointer',
     boxSizing: 'border-box'
+  };
+
+  const themeButtonStyle: React.CSSProperties = {
+    padding: '10px 12px',
+    borderRadius: '6px',
+    border: '1px solid rgba(255,255,255,0.2)',
+    color: '#fff',
+    cursor: 'pointer',
+    width: '100%',
+    textAlign: 'center',
+    fontSize: '12px',
+    transition: 'transform 0.1s ease, box-shadow 0.15s ease, border-color 0.15s ease',
+    background: 'rgba(255,255,255,0.05)'
+  };
+
+  const THEME_STORAGE_KEY = 'christmas_tree_custom_themes';
+  const [themeList, setThemeList] = useState<{ name: string; config: Record<string, unknown> }[]>([]);
+  const [selectedTheme, setSelectedTheme] = useState<string>('');
+  const [themeName, setThemeName] = useState<string>('');
+
+  // 仅提取主题相关的视觉字段，避免覆盖照片/时间轴等
+  const pickThemeConfig = (cfg: SceneConfig): Record<string, unknown> => ({
+    themeLabel: cfg.themeLabel,
+    background: cfg.background,
+    foliage: {
+      enabled: cfg.foliage.enabled,
+      count: cfg.foliage.count,
+      color: cfg.foliage.color,
+      chaosColor: cfg.foliage.chaosColor,
+      size: cfg.foliage.size,
+      glow: cfg.foliage.glow
+    },
+    lights: {
+      enabled: cfg.lights.enabled,
+      count: cfg.lights.count,
+      colors: cfg.lights.colors
+    },
+    elements: {
+      enabled: cfg.elements.enabled,
+      count: cfg.elements.count,
+      colors: cfg.elements.colors,
+      styleConfig: cfg.elements.styleConfig
+    },
+    ribbons: cfg.ribbons,
+    fog: cfg.fog,
+    spiralRibbon: cfg.spiralRibbon,
+    glowingStreaks: cfg.glowingStreaks,
+    giftPile: cfg.giftPile,
+    textEffect: cfg.textEffect,
+    heartEffect: cfg.heartEffect,
+    aurora: cfg.aurora,
+    shootingStars: cfg.shootingStars
+  });
+
+  const loadThemeList = () => {
+    try {
+      const raw = localStorage.getItem(THEME_STORAGE_KEY);
+      if (!raw) return;
+      const list = JSON.parse(raw) as { name: string; config: Record<string, unknown> }[];
+      setThemeList(list);
+      if (list.length && !selectedTheme) {
+        setSelectedTheme(list[0].name);
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  useEffect(() => {
+    loadThemeList();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const saveThemeList = (list: { name: string; config: Record<string, unknown> }[]) => {
+    setThemeList(list);
+    try {
+      localStorage.setItem(THEME_STORAGE_KEY, JSON.stringify(list));
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleSaveCurrentTheme = () => {
+    const name = (themeName || safeConfig.themeLabel || '').trim() || '自定义主题';
+    const themeConfig = pickThemeConfig(safeConfig);
+    const filtered = themeList.filter(t => t.name !== name);
+    const nextList = [{ name, config: themeConfig }, ...filtered].slice(0, 10);
+    saveThemeList(nextList);
+    setSelectedTheme(name);
+    setThemeName(name);
+    onChange(mergeConfig(config as unknown as Record<string, unknown>, { ...themeConfig, themeLabel: name } as Record<string, unknown>) as unknown as SceneConfig);
+  };
+
+  const handleApplySavedTheme = () => {
+    if (!selectedTheme) return;
+    const target = themeList.find(t => t.name === selectedTheme);
+    if (!target) return;
+    onChange(mergeConfig(config as unknown as Record<string, unknown>, { ...target.config, themeLabel: selectedTheme } as Record<string, unknown>) as unknown as SceneConfig);
+  };
+
+  const handleNewTheme = () => {
+    const defaultCfg = getDefaultSceneConfig() as unknown as SceneConfig;
+    const themeConfig = pickThemeConfig(defaultCfg);
+    onChange(mergeConfig(config as unknown as Record<string, unknown>, { ...themeConfig, themeLabel: 'default' } as Record<string, unknown>) as unknown as SceneConfig);
   };
 
   const inputStyle: React.CSSProperties = {
@@ -2735,6 +2864,93 @@ export const SettingsPanel = ({
         <p style={{ fontSize: '9px', color: '#666', margin: '4px 0 0 0' }}>
           部分歌曲支持歌词同步显示
         </p>
+      </CollapsibleSection>
+
+      {/* 主题预设 / 手势也可切换 */}
+      <CollapsibleSection title="主题预设" icon={<Palette size={14} />} defaultOpen={false}>
+        <p style={{ fontSize: '10px', color: '#888', margin: '0 0 10px 0' }}>
+          一键切换圣诞装饰主题（不影响照片/音乐/时间轴）。手势也可映射到主题动作。
+        </p>
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          <button
+            onClick={() => applyThemePreset('classic')}
+            style={{ ...themeButtonStyle, background: '#1f2a1f', border: '1px solid rgba(255,215,0,0.4)', flex: '1 1 120px' }}
+          >
+            🎄 经典绿红金
+          </button>
+          <button
+            onClick={() => applyThemePreset('icy')}
+            style={{ ...themeButtonStyle, background: '#0b1b2e', border: '1px solid rgba(125,225,255,0.5)', flex: '1 1 120px' }}
+          >
+            ❄️ 冰蓝银白
+          </button>
+          <button
+            onClick={() => applyThemePreset('candy')}
+            style={{ ...themeButtonStyle, background: '#2b0d1f', border: '1px solid rgba(255,111,181,0.5)', flex: '1 1 120px' }}
+          >
+            🍭 粉色糖果
+          </button>
+        </div>
+
+        {/* 主题管理（轻量化，仅按钮+下拉） */}
+        <div style={{ marginTop: '12px', padding: '10px', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', background: 'rgba(255,255,255,0.03)' }}>
+          <div style={{ ...labelStyle, marginBottom: '8px' }}>
+            <span>当前主题: {safeConfig.themeLabel || '未命名'}</span>
+          </div>
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+            <button
+              onClick={handleSaveCurrentTheme}
+              style={{ ...themeButtonStyle, padding: '8px 10px', width: 'auto', border: '1px solid rgba(0,200,120,0.6)', background: 'rgba(0,200,120,0.08)' }}
+            >
+              保存当前主题
+            </button>
+            <button
+              onClick={handleNewTheme}
+              style={{ ...themeButtonStyle, padding: '8px 10px', width: 'auto' }}
+            >
+              新建主题（重置视觉）
+            </button>
+            <input
+              placeholder="主题名称（保存时可覆盖）"
+              value={themeName}
+              onChange={e => setThemeName(e.target.value)}
+              style={{
+                background: 'rgba(0,0,0,0.4)',
+                color: '#fff',
+                border: '1px solid rgba(255,255,255,0.2)',
+                borderRadius: '4px',
+                padding: '6px 8px',
+                minWidth: '180px',
+                fontSize: '12px'
+              }}
+            />
+          </div>
+
+          {/* 已保存主题列表（按钮应用） */}
+          <div style={{ marginTop: '10px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            {themeList.length === 0 && (
+              <span style={{ fontSize: '11px', color: '#777' }}>还没有保存的主题，先点“保存当前主题”试试。</span>
+            )}
+            {themeList.map(t => (
+              <button
+                key={t.name}
+                onClick={() => { setSelectedTheme(t.name); handleApplySavedTheme(); setThemeName(t.name); }}
+                style={{
+                  ...themeButtonStyle,
+                  padding: '8px 10px',
+                  width: 'auto',
+                  border: selectedTheme === t.name ? '1px solid rgba(0,200,120,0.7)' : '1px solid rgba(255,255,255,0.2)',
+                  background: selectedTheme === t.name ? 'rgba(0,200,120,0.1)' : 'rgba(255,255,255,0.05)'
+                }}
+              >
+                {t.name}
+              </button>
+            ))}
+          </div>
+          <p style={{ fontSize: '9px', color: '#666', margin: '8px 0 0 0' }}>
+            保存/应用只影响视觉配置，照片/音乐/时间轴保持不变。保存同名将覆盖原有主题。
+          </p>
+        </div>
       </CollapsibleSection>
 
       {/* AI 手势识别 */}

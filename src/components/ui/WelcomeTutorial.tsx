@@ -35,7 +35,10 @@ const actionNames: Record<GestureAction, string> = {
   screenshot: '截图',
   reset: '重置视角',
   zoomIn: '放大',
-  zoomOut: '缩小'
+  zoomOut: '缩小',
+  themeClassic: '经典主题',
+  themeIcy: '冰蓝主题',
+  themeCandy: '糖果主题'
 };
 
 // 生成手势说明文本

@@ -483,6 +483,12 @@ export const sanitizeShareConfig = (config: unknown): Record<string, unknown> =>
       .map(t => sanitizeText(t, 50))
       .filter(t => t.length > 0);
   }
+
+  // 主题标签
+  if (cfg.themeLabel !== undefined) {
+    const label = sanitizeText(cfg.themeLabel, 50);
+    if (label) sanitized.themeLabel = label;
+  }
   
   // 文字切换间隔
   if (cfg.textSwitchInterval !== undefined) {

@@ -3,6 +3,7 @@ import { Canvas } from '@react-three/fiber';
 import * as THREE from 'three';
 import { Experience, GestureController, TitleOverlay, WelcomeTutorial, IntroOverlay, CenterPhoto, LyricsDisplay, photoScreenPositions, GiftStepOverlay, VoicePlayer } from '../components';
 import { CHRISTMAS_MUSIC_URL } from '../config';
+import { THEME_PRESETS } from '../config/themes';
 import { isMobile, isTablet, getDefaultSceneConfig, toggleFullscreen, isFullscreen, isFullscreenSupported, enterFullscreen, lockLandscape } from '../utils/helpers';
 import { sanitizeShareConfig, sanitizePhotos, sanitizeText } from '../utils/sanitize';
 import { getShare } from '../lib/r2';
@@ -498,6 +499,30 @@ export default function SharePage({ shareId }: SharePageProps) {
       case 'reset':
         setSceneState('FORMED');
         setRotationSpeed(0);
+        break;
+      case 'themeClassic':
+        setSceneConfig((prev) =>
+          deepMergeConfig(
+            prev as unknown as Record<string, unknown>,
+            { ...THEME_PRESETS.classic, themeLabel: 'classic' } as unknown as Record<string, unknown>
+          ) as unknown as SceneConfig
+        );
+        break;
+      case 'themeIcy':
+        setSceneConfig((prev) =>
+          deepMergeConfig(
+            prev as unknown as Record<string, unknown>,
+            { ...THEME_PRESETS.icy, themeLabel: 'icy' } as unknown as Record<string, unknown>
+          ) as unknown as SceneConfig
+        );
+        break;
+      case 'themeCandy':
+        setSceneConfig((prev) =>
+          deepMergeConfig(
+            prev as unknown as Record<string, unknown>,
+            { ...THEME_PRESETS.candy, themeLabel: 'candy' } as unknown as Record<string, unknown>
+          ) as unknown as SceneConfig
+        );
         break;
       default:
         break;
