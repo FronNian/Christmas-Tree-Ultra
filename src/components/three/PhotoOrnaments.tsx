@@ -202,8 +202,8 @@ export const PhotoOrnaments = ({
       texture.needsUpdate = true;
       
       // 获取图片的实际宽高比
-      const image = texture.image;
-      const aspectRatio = image ? image.width / image.height : 1;
+      const image = texture.image as { width: number; height: number } | undefined;
+      const aspectRatio = (image && image.width && image.height) ? image.width / image.height : 1;
       return { texture, aspectRatio };
     });
   }, [textures]);

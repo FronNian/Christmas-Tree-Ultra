@@ -55,7 +55,8 @@ export default function SharePage({ shareId }: SharePageProps) {
 
   // 场景状态
   const [sceneState, setSceneState] = useState<SceneState>('FORMED');
-  const [rotationSpeed, setRotationSpeed] = useState(0);
+  // 性能优化：rotationSpeed 改为 Ref，避免每帧触发 React 重渲染导致卡顿
+  const rotationSpeedRef = useRef(0);
   // 使用 ref 存储手掌移动值，避免频繁状态更新导致卡顿
   const palmMoveRef = useRef<{ x: number; y: number } | null>(null);
   const [aiStatus, setAiStatus] = useState("INITIALIZING...");
@@ -499,7 +500,7 @@ export default function SharePage({ shareId }: SharePageProps) {
       }
       case 'reset':
         setSceneState('FORMED');
-        setRotationSpeed(0);
+        rotationSpeedRef.current = 0;
         break;
       case 'themeClassic':
         setSceneConfig((prev) =>
@@ -585,6 +586,11 @@ export default function SharePage({ shareId }: SharePageProps) {
   const handlePalmMove = useCallback((deltaX: number, deltaY: number) => {
     // 直接更新 ref，避免触发 React 重新渲染
     palmMoveRef.current = { x: deltaX, y: deltaY };
+  }, []);
+
+  // 处理手势旋转速度控制 - 直接更新 Ref
+  const handleRotationSpeedChange = useCallback((speed: number) => {
+    rotationSpeedRef.current = speed;
   }, []);
 
   // 获取当前音乐的歌词 URL
@@ -885,7 +891,7 @@ export default function SharePage({ shareId }: SharePageProps) {
         >
           <Experience
             sceneState={timeline.showTree ? 'FORMED' : sceneState}
-            rotationSpeed={rotationSpeed}
+            rotationSpeed={rotationSpeedRef}
             palmMoveRef={palmMoveRef}
             config={sceneConfig}
             selectedPhotoIndex={selectedPhotoIndex}
@@ -917,7 +923,7 @@ export default function SharePage({ shareId }: SharePageProps) {
       {/* 手势控制器 - 教程显示时禁用 */}
       <GestureController
         onGesture={handleGestureChange}
-        onMove={setRotationSpeed}
+        onMove={handleRotationSpeedChange}
         onStatus={setAiStatus}
         debugMode={false}
         enabled={!showTutorial}

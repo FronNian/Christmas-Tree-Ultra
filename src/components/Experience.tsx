@@ -1,3 +1,4 @@
+
 import { useRef, Suspense, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { OrbitControls, PerspectiveCamera, Stars, Sparkles, useProgress } from '@react-three/drei';
@@ -29,7 +30,7 @@ import { TextParticles } from '../TextParticles';
 
 interface ExperienceProps {
   sceneState: SceneState;
-  rotationSpeed: number;
+  rotationSpeed: React.MutableRefObject<number>; // 改为接收 Ref
   config: SceneConfig;
   selectedPhotoIndex: number | null;
   onPhotoSelect: (index: number | null) => void;
@@ -45,7 +46,7 @@ interface ExperienceProps {
   heartPhotoInterval?: number; // 照片轮播间隔（毫秒）
   heartBottomText?: string; // 爱心特效底部文字
   palmMoveRef?: React.MutableRefObject<{ x: number; y: number } | null>; // 手掌滑动控制视角（使用 ref 避免频繁更新）
-  zoomDelta?: number; // 手势缩放控制
+  zoomRef?: React.MutableRefObject<number>; // 手势缩放控制（使用 ref 避免频繁更新）
   onHeartPaused?: (paused: boolean) => void; // 爱心特效暂停状态回调
   fireworkTrigger?: boolean; // 烟花触发信号
   onFireworkTriggered?: () => void; // 烟花触发后回调
@@ -78,7 +79,7 @@ export const Experience = ({
   heartPhotoInterval = 3000,
   heartBottomText,
   palmMoveRef,
-  zoomDelta,
+  zoomRef,
   onHeartPaused,
   fireworkTrigger,
   onFireworkTriggered,
@@ -222,23 +223,37 @@ export const Experience = ({
         }
       } else if (selectedPhotoIndex === null) {
         // 没有手掌控制且没有选中照片时使用自动旋转
-        controlsRef.current.setAzimuthalAngle(currentAzimuth + rotationSpeed);
+        // 直接从 ref 读取当前旋转速度
+        const currentRotationSpeed = rotationSpeed.current;
+        if (currentRotationSpeed !== 0) {
+          controlsRef.current.setAzimuthalAngle(currentAzimuth + currentRotationSpeed);
+        }
       }
       
       // 手势缩放控制
-      // zoomDelta > 0 表示手张开 -> 放大（相机靠近，距离减小）
-      // zoomDelta < 0 表示手收缩 -> 缩小（相机远离，距离增大）
-      if (zoomDelta && Math.abs(zoomDelta) > 0.1) {
-        const clampedZoom = Math.max(-30, Math.min(30, zoomDelta));
+      // 使用 Ref 读取最新的缩放增量，避免 React 重渲染
+      const currentZoomDelta = zoomRef?.current || 0;
+      
+      if (Math.abs(currentZoomDelta) > 0.1) {
+        const clampedZoom = Math.max(-30, Math.min(30, currentZoomDelta));
         const currentDistance = controlsRef.current.getDistance();
         // 反转方向：zoomDelta正值时距离减小（放大）
-        const newDistance = Math.max(
+        // 添加平滑系数 (0.1)，避免视角跳变
+        const targetDistance = Math.max(
           25,
-          Math.min(100, currentDistance - clampedZoom * 1.2)
+          Math.min(100, currentDistance - clampedZoom * 1.5)
         );
-        // 通过调整相机位置实现缩放
+        
+        // 使用 lerp 平滑过渡相机位置
         const direction = controlsRef.current.object.position.clone().normalize();
-        controlsRef.current.object.position.copy(direction.multiplyScalar(newDistance));
+        const newPos = direction.multiplyScalar(THREE.MathUtils.lerp(currentDistance, targetDistance, 0.1));
+        controlsRef.current.object.position.copy(newPos);
+        
+        // 逐渐衰减缩放值，形成惯性效果
+        if (zoomRef) {
+          zoomRef.current *= 0.9; 
+          if (Math.abs(zoomRef.current) < 0.1) zoomRef.current = 0;
+        }
       }
       
       controlsRef.current.update();
@@ -259,7 +274,7 @@ export const Experience = ({
         zoomSpeed={0.8}
         minDistance={25}
         maxDistance={100}
-        autoRotate={selectedPhotoIndex === null && rotationSpeed === 0 && sceneState === 'FORMED'}
+        autoRotate={selectedPhotoIndex === null && rotationSpeed.current === 0 && sceneState === 'FORMED'}
         autoRotateSpeed={0.3}
         minPolarAngle={sceneState === 'CHAOS' ? 0 : Math.PI / 4}
         maxPolarAngle={sceneState === 'CHAOS' ? Math.PI : Math.PI / 1.8}
@@ -522,4 +537,3 @@ export const Experience = ({
     </>
   );
 };
-

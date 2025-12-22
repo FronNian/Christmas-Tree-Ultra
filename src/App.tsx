@@ -1,3 +1,4 @@
+
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { Canvas } from '@react-three/fiber';
 import * as THREE from 'three';
@@ -45,8 +46,13 @@ export default function GrandTreeApp() {
 
   // 场景状态
   const [sceneState, setSceneState] = useState<SceneState>('CHAOS');
-  const [rotationSpeed, setRotationSpeed] = useState(0);
-  const [zoomDelta, setZoomDelta] = useState<number>(0);
+  
+  // 性能优化：rotationSpeed 改为 Ref，避免每帧触发 React 重渲染导致卡顿
+  const rotationSpeedRef = useRef(0);
+  
+  // 性能优化：将 zoomDelta 从 state 改为 ref，避免每帧触发重渲染导致的卡顿
+  const zoomRef = useRef<number>(0);
+  
   // 使用 ref 存储手掌移动值，避免频繁状态更新导致卡顿
   const palmMoveRef = useRef<{ x: number; y: number } | null>(null);
   const [aiStatus, setAiStatus] = useState("INITIALIZING...");
@@ -238,7 +244,6 @@ export default function GrandTreeApp() {
   // 获取文字切换间隔（毫秒）
   const textSwitchIntervalMs = (sceneConfig.textSwitchInterval || 3) * 1000;
   
-  // 同步配置到 refs（避免 useCallback 依赖变化）
   // 同步配置到 refs（避免 useCallback 依赖变化）
   useEffect(() => {
     configuredTextsRef.current = configuredTexts;
@@ -517,8 +522,10 @@ export default function GrandTreeApp() {
         break;
       case 'reset':
         setSceneState('FORMED');
-        setRotationSpeed(0);
-        setZoomDelta(0);
+        // 重置旋转速度 - 更新 Ref
+        rotationSpeedRef.current = 0;
+        // 重置缩放
+        zoomRef.current = 0;
         break;
       case 'themeClassic':
         applyTheme('classic');
@@ -633,14 +640,21 @@ export default function GrandTreeApp() {
     palmMoveRef.current = { x: deltaX, y: deltaY };
   }, [photoLocked]);
 
-  // 处理手势缩放
+  // 处理手势缩放 - 使用 Ref 避免 React 重新渲染
   const handleZoom = useCallback((delta: number) => {
     // 照片锁定期间禁止缩放
     if (photoLocked) return;
-    setZoomDelta(delta);
-    // 短暂后清除
-    setTimeout(() => setZoomDelta(0), 50);
+    // 直接更新 Ref，不触发组件更新
+    zoomRef.current = delta;
+    
+    // 自动回弹/清理 (可选，根据手势控制器的逻辑，如果手势丢失会自动归零)
+    // 这里不做自动清理，完全依赖 GestureController 的持续输入
   }, [photoLocked]);
+  
+  // 处理手势旋转速度控制 - 直接更新 Ref
+  const handleRotationSpeedChange = useCallback((speed: number) => {
+    rotationSpeedRef.current = speed;
+  }, []);
 
   // 获取当前音乐 URL
   const getMusicUrl = useCallback(() => {
@@ -870,6 +884,7 @@ export default function GrandTreeApp() {
       // R 键重置视角
       if (e.key === 'r' || e.key === 'R') {
         setRefreshKey(k => k + 1);
+        rotationSpeedRef.current = 0;
       }
       // F 键全屏切换
       if (e.key === 'f' || e.key === 'F') {
@@ -1151,9 +1166,10 @@ export default function GrandTreeApp() {
         >
           <Experience
             sceneState={timeline.showTree ? 'FORMED' : sceneState}
-            rotationSpeed={rotationSpeed}
+            rotationSpeed={rotationSpeedRef} // 传递 Ref 而不是值
             palmMoveRef={palmMoveRef}
-            zoomDelta={zoomDelta}
+            // 传递 zoomRef 而不是 zoomDelta，避免重渲染
+            zoomRef={zoomRef}
             config={sceneConfig}
             selectedPhotoIndex={selectedPhotoIndex}
             onPhotoSelect={setSelectedPhotoIndex}
@@ -1183,14 +1199,14 @@ export default function GrandTreeApp() {
       {/* 手势控制器 */}
       <GestureController
         onGesture={handleGestureChange}
-        onMove={setRotationSpeed}
+        onMove={handleRotationSpeedChange} // 传递新的处理函数，只更新 Ref
         onStatus={setAiStatus}
         debugMode={debugMode}
         enabled={aiEnabled}
         isPhotoSelected={selectedPhotoIndex !== null}
         onPinch={handlePinch}
         onPalmMove={handlePalmMove}
-        onZoom={handleZoom}
+        onZoom={handleZoom} // 现在这个调用不会触发 App 重渲染，只会更新 zoomRef
       />
 
 
@@ -1293,7 +1309,11 @@ export default function GrandTreeApp() {
         )}
 
         <button
-          onClick={() => setSceneState(s => s === 'CHAOS' ? 'FORMED' : 'CHAOS')}
+          onClick={() => {
+            setSceneState(s => s === 'CHAOS' ? 'FORMED' : 'CHAOS');
+            // 切换时重置旋转速度，防止散开后依然高速旋转
+            rotationSpeedRef.current = 0;
+          }}
           style={{ ...buttonStyle(false, mobile), padding: mobile ? '12px 24px' : '12px 30px', display: 'flex', alignItems: 'center', gap: '6px' }}
         >
           {sceneState === 'CHAOS' ? <><TreePine size={18} /> 聚合</> : <><Sparkles size={18} /> 散开</>}

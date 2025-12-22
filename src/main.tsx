@@ -1,8 +1,9 @@
+
 import { StrictMode, Component, type ReactNode, useState, useEffect } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
-import App from './App.tsx'
-import SharePage from './pages/SharePage.tsx'
+import App from './App'
+import SharePage from './pages/SharePage'
 
 // 错误边界组件 - 防止白屏
 class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; error: Error | null }> {

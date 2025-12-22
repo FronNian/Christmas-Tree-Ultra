@@ -1,3 +1,4 @@
+
 import { useRef, useEffect, useCallback } from 'react';
 import { FilesetResolver, GestureRecognizer, HandLandmarker, DrawingUtils } from '@mediapipe/tasks-vision';
 import type { NormalizedLandmark } from '@mediapipe/tasks-vision';
@@ -7,8 +8,8 @@ import { isMobile } from '../utils/helpers';
 const MODEL_TYPE: 'gesture' | 'landmark' = 'landmark';
 
 // 缩放控制参数，防止抖动导致的误触发
-const ZOOM_SPEED_MIN = 0.006; // 速度低于该值视为抖动
-const ZOOM_SPEED_MAX = 0.06; // 速度高于该值视为异常跳变
+const ZOOM_SPEED_MIN = 0.05; // 提高阈值 (原 0.02)
+const ZOOM_SPEED_MAX = 0.08; // 速度高于该值视为异常跳变
 const ZOOM_DELTA_CLAMP = 25; // 单次缩放的最大幅度
 
 // 手势类型
@@ -93,6 +94,7 @@ export const GestureController = ({
   };
 
   // 判断手指是否伸直
+  // 优化：稍微提高阈值 (1.25 -> 1.3)，让"弯曲"更容易被检测到，从而改善握拳识别
   const isExtended = useCallback(
     (
       landmarks: NormalizedLandmark[],
@@ -108,7 +110,7 @@ export const GestureController = ({
         landmarks[mcpIdx].x - wrist.x,
         landmarks[mcpIdx].y - wrist.y
       );
-      return tipDist > mcpDist * 1.25;
+      return tipDist > mcpDist * 1.3;
     },
     []
   );
@@ -379,6 +381,12 @@ export const GestureController = ({
           const palmY =
             (landmarks[0].y + landmarks[5].y + landmarks[17].y) / 3;
 
+          // 计算手掌参考尺寸（腕部到中指指根的距离），用于归一化距离判断
+          const handSize = Math.hypot(
+            landmarks[0].x - landmarks[9].x,
+            landmarks[0].y - landmarks[9].y
+          );
+
           // 计算移动差值（镜像 x 轴）
           let dx = 0;
           let dy = 0;
@@ -394,7 +402,7 @@ export const GestureController = ({
 
           if (MODEL_TYPE === 'landmark') {
             // 基于关键点的自定义手势识别（通常更准确）
-            // 捏合检测（优先级最高）
+            // 捏合检测（优先级最高，必须中指伸直以区别于握拳）
             if (pinch && middleExtended) {
               detectedGesture = 'Pinch';
               gestureScore = 0.9;
@@ -404,19 +412,30 @@ export const GestureController = ({
               detectedGesture = 'Open_Palm';
               gestureScore = 0.85;
             }
-            // 握拳（所有手指都弯曲）
-            else if (!indexExtended && !middleExtended && !ringExtended && !pinkyExtended && !thumbExtended) {
-              detectedGesture = 'Closed_Fist';
-              gestureScore = 0.85;
+            // 改进的握拳/点赞逻辑：只要四个手指弯曲，再根据大拇指判断
+            else if (!indexExtended && !middleExtended && !ringExtended && !pinkyExtended) {
+               // 关键修复：通过大拇指指尖到食指指根的距离来区分握拳和点赞
+               // 握拳时，拇指通常紧贴食指或中指，距离较近
+               // 点赞时，拇指通常远离食指，距离较远
+               const thumbTip = landmarks[4];
+               const indexMCP = landmarks[5]; // 食指指根
+               const distThumbIndex = Math.hypot(thumbTip.x - indexMCP.x, thumbTip.y - indexMCP.y);
+               
+               // 如果拇指虽然"伸直"了（相对于腕部），但实际上离食指很近（< 手掌尺寸的 60%），那这大概率是握拳（拇指搭在拳头上）
+               // 反之，如果距离较远 (> 0.6 * handSize)，且拇指伸直，才是真正的点赞
+               if (thumbExtended && distThumbIndex > handSize * 0.6) {
+                  // 四指弯曲，拇指伸直且远离 -> 点赞
+                  detectedGesture = 'Thumb_Up';
+                  gestureScore = 0.8;
+               } else {
+                  // 四指弯曲，拇指弯曲 OR 拇指贴近拳头 -> 握拳
+                  detectedGesture = 'Closed_Fist';
+                  gestureScore = 0.85;
+               }
             }
             // 食指向上（只有食指伸直）
             else if (indexExtended && !middleExtended && !ringExtended && !pinkyExtended) {
               detectedGesture = 'Pointing_Up';
-              gestureScore = 0.8;
-            }
-            // 大拇指向上（只有拇指伸直，其他手指弯曲）
-            else if (thumbExtended && !indexExtended && !middleExtended && !ringExtended && !pinkyExtended) {
-              detectedGesture = 'Thumb_Up';
               gestureScore = 0.8;
             }
             // 大拇指向下（拇指弯曲，其他手指伸直）
@@ -490,7 +509,7 @@ export const GestureController = ({
               case 'Open_Palm':
                 return 2; // 降低阈值，更快响应
               case 'Closed_Fist':
-                return 3;
+                return 2; // 降低阈值 (3->2)，让握拳更灵敏
               case 'Victory':
                 return 4;
               case 'ILoveYou':
@@ -522,22 +541,24 @@ export const GestureController = ({
             }
 
             // 2. 缩放控制：仅在五指完全张开且稳定时才触发
-            // 手掌张开（scale变大）-> 放大（zoom负值让相机靠近）
-            // 手掌收缩（scale变小）-> 缩小（zoom正值让相机远离）
-            if (isFiveFingers && isStable && detectedGesture === 'Open_Palm') {
+            // 增加稳定性判断：仅当旋转速度较低时才允许缩放，避免既旋转又缩放的混乱
+            const isRotating = Math.abs(dx) > 0.005 || Math.abs(rotationBoostRef.current) > 2.0;
+
+            if (isFiveFingers && isStable && detectedGesture === 'Open_Palm' && !isRotating) {
             const rawScale = Math.hypot(
                 wrist.x - landmarks[9].x,
                 wrist.y - landmarks[9].y
               );
-            // 使用平滑后的尺度，抑制噪声
+            // 使用平滑后的尺度，抑制噪声 (Smoothing factor 0.9 for stability)
             const currentScale =
               lastHandScaleRef.current === null
                 ? rawScale
-                : lastHandScaleRef.current * 0.7 + rawScale * 0.3;
+                : lastHandScaleRef.current * 0.9 + rawScale * 0.1;
+              
               if (lastHandScaleRef.current !== null) {
                 const deltaScale = currentScale - lastHandScaleRef.current;
                 const speed = Math.abs(deltaScale);
-                // 提高阈值，避免抖动
+                // 提高阈值，避免抖动 (ZOOM_SPEED_MIN 提至 0.05)
               if (
                 speed > ZOOM_SPEED_MIN &&
                 speed < ZOOM_SPEED_MAX &&

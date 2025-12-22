@@ -1,12 +1,19 @@
+
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import basicSsl from '@vitejs/plugin-basic-ssl'
 import obfuscatorPlugin from 'vite-plugin-javascript-obfuscator'
 import compression from 'vite-plugin-compression'
+import { fileURLToPath, URL } from 'node:url'
 
 // https://vite.dev/config/
 export default defineConfig({
   base: './', // 使用相对路径，支持 Live Server 本地预览
+  resolve: {
+    alias: {
+      '@': fileURLToPath(new URL('./src', import.meta.url))
+    },
+  },
   plugins: [
     react(),
     basicSsl(),
