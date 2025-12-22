@@ -243,6 +243,7 @@ export const FairyLights = ({
       if (!objData) return;
       
       const mesh = child as THREE.Mesh;
+      const mat = mesh.material as THREE.MeshStandardMaterial;
       
       // 计算当前的 chaos 位置
       const currentChaos = currentChaosRef.current[i];
@@ -266,9 +267,10 @@ export const FairyLights = ({
       
       // 使用缓动函数插值位置
       mesh.position.lerpVectors(animatedChaosPos, objData.targetPos, elementT);
+      
       const intensity = (Math.sin(time * objData.blinkSpeed + objData.timeOffset) + 1) / 2;
-      if (mesh.material) {
-        (mesh.material as THREE.MeshStandardMaterial).emissiveIntensity = isFormed ? 1 + intensity * 1.5 : 0.5 + intensity * 0.8;
+      if (mat) {
+        mat.emissiveIntensity = isFormed ? 1 + intensity * 1.5 : 0.5 + intensity * 0.8;
       }
     });
   });

@@ -395,22 +395,25 @@ export const ChristmasElements = ({
       // 使用缓动函数插值位置（从动画中的 chaos 位置到目标位置）
       child.position.lerpVectors(animatedChaosPos, objData.targetPos, elementT);
       
-      // 计算闪烁：飞机灯效果 - 大部分时间暗，突然闪一下
+      // 计算闪烁：白光闪灯效果 - 更亮、更明显的闪烁
       let flashIntensity = 0;
+      let whiteFlashAmount = 0;
       if (twinkleEnabled) {
         // 根据速度调整闪烁间隔：速度越快，间隔越短
         const adjustedInterval = objData.twinkleInterval / twinkleSpeed;
         // 使用 fmod 计算当前在闪烁周期中的位置
         const cycleTime = (time + objData.twinklePhase) % adjustedInterval;
-        // 闪烁持续时间很短（0.08秒），其余时间暗
-        const flashDuration = 0.08;
+        // 闪烁持续时间稍长（0.15秒），让白光更明显
+        const flashDuration = 0.15;
         const isFlashing = cycleTime < flashDuration;
         // 闪烁时快速亮起然后衰减
         const flashProgress = isFlashing ? cycleTime / flashDuration : 0;
-        // 使用指数衰减让闪烁更锐利：快速亮起，快速暗下
+        // 使用更强的闪烁效果
         flashIntensity = isFlashing 
-          ? Math.pow(1 - flashProgress, 0.5) * objData.twinkleIntensity 
+          ? Math.pow(1 - flashProgress, 0.3) * objData.twinkleIntensity * 2.5
           : 0;
+        // 白光混入量：闪烁时混入白色
+        whiteFlashAmount = isFlashing ? Math.pow(1 - flashProgress, 0.5) * 0.8 : 0;
       }
       
       // 如果是精灵（图片），让它面向相机并更新闪烁
@@ -425,12 +428,20 @@ export const ChristmasElements = ({
         child.rotation.y += delta * objData.rotationSpeed.y * 0.5;
         child.rotation.z += delta * objData.rotationSpeed.z * 0.5;
         
-        // 更新闪烁发光效果：平时暗，闪烁时突然亮
+        // 更新闪烁发光效果：白光闪烁
         const mesh = child as THREE.Mesh;
         const mat = mesh.material as THREE.MeshStandardMaterial;
         if (mat && mat.emissiveIntensity !== undefined) {
-          // 基础发光很低，闪烁时突然变亮
-          mat.emissiveIntensity = 0.15 + flashIntensity;
+          // 基础发光 + 闪烁时大幅提亮
+          mat.emissiveIntensity = 0.2 + flashIntensity * 1.5;
+          // 闪烁时混入白色
+          if (whiteFlashAmount > 0) {
+            const baseColor = new THREE.Color(objData.color);
+            const whiteColor = new THREE.Color('#FFFFFF');
+            mat.emissive.copy(baseColor.lerp(whiteColor, whiteFlashAmount));
+          } else {
+            mat.emissive.set(objData.color);
+          }
         }
       }
     });
