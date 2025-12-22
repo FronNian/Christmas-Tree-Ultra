@@ -11,6 +11,7 @@ const shortcuts = [
   { key: 'Space', description: '聚合/散开切换', category: '场景控制' },
   { key: 'R', description: '重置视角', category: '场景控制' },
   { key: 'F', description: '全屏切换', category: '场景控制' },
+  { key: 'P', description: '播放/停止故事线', category: '场景控制' },
   { key: 'M', description: '音乐开关', category: '媒体控制' },
   { key: 'H', description: '爱心特效', category: '特效' },
   { key: 'T', description: '文字特效', category: '特效' },

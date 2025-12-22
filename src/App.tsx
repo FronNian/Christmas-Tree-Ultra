@@ -876,11 +876,21 @@ export default function GrandTreeApp() {
       if (e.key === 's' || e.key === 'S') {
         setShowSettings(true);
       }
+      // P 键播放/停止故事线
+      if (e.key === 'p' || e.key === 'P') {
+        if (sceneConfig.timeline?.enabled && sceneConfig.timeline.steps.length > 0) {
+          if (timeline.state.isPlaying) {
+            timeline.actions.stop();
+          } else {
+            timeline.actions.play();
+          }
+        }
+      }
     };
     
     document.addEventListener('keydown', handleGlobalKeyDown);
     return () => document.removeEventListener('keydown', handleGlobalKeyDown);
-  }, [mobile, showSettings, modalVisible, showTutorial, showPrivacy, showKeyboardHelp, showPhotoManager, demoMode, toggleMusic, triggerEffect]);
+  }, [mobile, showSettings, modalVisible, showTutorial, showPrivacy, showKeyboardHelp, showPhotoManager, demoMode, toggleMusic, triggerEffect, sceneConfig.timeline, timeline.state.isPlaying, timeline.actions]);
 
   // 加载本地保存的照片（配置已在 useState 初始化时加载）
   useEffect(() => {
