@@ -422,9 +422,9 @@ export const ChristmasElements = ({
       // 使用缓动函数插值位置（从动画中的 chaos 位置到目标位置）
       child.position.lerpVectors(animatedChaosPos, objData.targetPos, elementT);
       
-      // 计算闪烁：白光闪灯效果 - 更亮、更明显的闪烁
+      // 计算闪烁：使用自定义闪烁颜色的飞机灯效果
       let flashIntensity = 0;
-      let whiteFlashAmount = 0;
+      let isFlashingNow = false;
       if (twinkleEnabled) {
         // 根据速度调整闪烁间隔：速度越快，间隔越短
         const adjustedInterval = objData.twinkleInterval / twinkleSpeed;
@@ -439,8 +439,7 @@ export const ChristmasElements = ({
         flashIntensity = isFlashing 
           ? Math.pow(1 - flashProgress, 0.3) * objData.twinkleIntensity * 2.5
           : 0;
-        // 白光混入量：闪烁时混入白色
-        whiteFlashAmount = isFlashing ? Math.pow(1 - flashProgress, 0.5) * 0.8 : 0;
+        isFlashingNow = isFlashing;
       }
       
       // 如果是精灵（图片），让它面向相机并更新闪烁
@@ -468,10 +467,12 @@ export const ChristmasElements = ({
             ? new THREE.Color(twinkleBaseColor) 
             : new THREE.Color(objData.color);
           
-          // 闪烁时混入闪烁颜色
-          if (whiteFlashAmount > 0) {
+          // 闪烁时直接向自定义闪烁颜色过渡，否则使用基础颜色
+          if (isFlashingNow) {
             const flashColor = new THREE.Color(twinkleFlashColor);
-            mat.emissive.copy(baseEmissiveColor.clone().lerp(flashColor, whiteFlashAmount));
+            // 0.0 ~ 1.0，越接近 1 越靠近闪烁颜色
+            const mix = Math.min(1, 0.2 + flashIntensity * 0.4);
+            mat.emissive.copy(baseEmissiveColor.clone().lerp(flashColor, mix));
           } else {
             mat.emissive.copy(baseEmissiveColor);
           }
