@@ -406,7 +406,7 @@ export default function GrandTreeApp() {
       
       try {
         const base64 = await fileToBase64(file);
-        return base64;
+        return { base64, fileName: file.name };
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : '未知错误';
         errors.push(`「${file.name}」: ${errorMsg}`);
@@ -416,21 +416,34 @@ export default function GrandTreeApp() {
     });
     
     const results = await Promise.all(promises);
-    const newPhotos = results.filter((p): p is string => p !== null);
+    const validResults = results.filter((r): r is { base64: string; fileName: string } => r !== null);
+    const newPhotos = validResults.map(r => r.base64);
     
     console.log(`成功处理 ${newPhotos.length} 张图片`);
 
+    // 显示成功提示（如果有成功上传的）
     if (newPhotos.length > 0) {
       setUploadedPhotos(prev => [...prev, ...newPhotos]);
       setRefreshKey(k => k + 1);
-    }
-    
-    // 显示错误提示
-    if (errors.length > 0) {
-      const errorText = errors.length === 1 
-        ? errors[0] 
-        : `${errors.length} 个文件无法加载:\n${errors.slice(0, 3).join('\n')}${errors.length > 3 ? '\n...' : ''}`;
-      showModal('error', '部分图片加载失败', errorText);
+      
+      // 如果同时有错误，显示部分成功提示
+      if (errors.length > 0) {
+        const errorText = errors.length === 1 
+          ? errors[0] 
+          : `${errors.length} 个文件无法加载:\n${errors.slice(0, 3).join('\n')}${errors.length > 3 ? '\n...' : ''}`;
+        showModal('error', `成功上传 ${newPhotos.length} 张，${errors.length} 张失败`, errorText);
+      }
+    } else {
+      // 如果全部失败，显示错误提示
+      if (errors.length > 0) {
+        const errorText = errors.length === 1 
+          ? errors[0] 
+          : `${errors.length} 个文件无法加载:\n${errors.slice(0, 5).join('\n')}${errors.length > 5 ? `\n...还有 ${errors.length - 5} 个文件失败` : ''}`;
+        showModal('error', '图片上传失败', errorText);
+      } else {
+        // 理论上不应该到这里，但以防万一
+        showModal('error', '上传失败', '无法处理选中的文件，请检查文件格式和大小');
+      }
     }
     
     // 重置 input，确保下次可以选择相同文件

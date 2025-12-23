@@ -24,6 +24,7 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [sizeError, setSizeError] = useState<string | null>(null);
+  const [uploadErrors, setUploadErrors] = useState<string[]>([]);
 
   const MAX_PHOTO_MB = 50;
 
@@ -53,33 +54,70 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
   // 添加照片
   const handleAddPhotos = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
-    if (!files) return;
+    if (!files || files.length === 0) return;
 
     setSizeError(null);
+    setUploadErrors([]);
 
-    // 先根据原始文件大小做预检查，避免超出 50MB
-    let currentSize = totalSizeMB;
+    const errors: string[] = [];
     const newPhotos: string[] = [];
-    for (let i = 0; i < files.length; i++) {
+    let currentSize = totalSizeMB;
+
+    // 先检查 MIME 类型
+    const fileArray = Array.from(files);
+    for (let i = 0; i < fileArray.length; i++) {
+      const file = fileArray[i];
+      
+      // 1. 检查文件类型
+      if (!file.type.startsWith('image/')) {
+        errors.push(`「${file.name}」不是图片文件`);
+        continue;
+      }
+
+      // 2. 检查文件大小（考虑 base64 编码会增加约 33% 的大小）
+      const fileSizeMB = file.size / (1024 * 1024);
+      const estimatedBase64SizeMB = fileSizeMB * 1.33; // base64 编码后大约增加 33%
+      
+      if (currentSize + estimatedBase64SizeMB > MAX_PHOTO_MB) {
+        const errorMsg = `已达到 ${currentSize.toFixed(1)} MB，添加「${file.name}」（约 ${estimatedBase64SizeMB.toFixed(1)} MB）会超过 ${MAX_PHOTO_MB} MB 限制。请删除部分照片或使用图片压缩工具（如 https://imagestool.com/zh_CN/compress-images）压缩后再试。`;
+        setSizeError(errorMsg);
+        errors.push(errorMsg);
+        break; // 停止处理后续文件
+      }
+
+      // 3. 尝试转换并验证图片
       try {
-        const file = files[i];
-        const fileSizeMB = file.size / (1024 * 1024);
-        if (currentSize + fileSizeMB > MAX_PHOTO_MB) {
-          setSizeError(`已达到 ${currentSize.toFixed(1)} MB，添加「${file.name}」会超过 ${MAX_PHOTO_MB} MB 限制。请删除部分照片或使用图片压缩工具（如 https://imagestool.com/zh_CN/compress-images）压缩后再试。`);
+        const base64 = await fileToBase64(file);
+        const actualSizeMB = estimateBase64SizeMB(base64);
+        
+        // 再次检查实际大小（防止估算偏差）
+        if (currentSize + actualSizeMB > MAX_PHOTO_MB) {
+          const errorMsg = `「${file.name}」实际大小（${actualSizeMB.toFixed(1)} MB）超过限制，无法添加。请使用图片压缩工具（如 https://imagestool.com/zh_CN/compress-images）压缩后再试。`;
+          setSizeError(errorMsg);
+          errors.push(errorMsg);
           break;
         }
-        const base64 = await fileToBase64(files[i]);
+        
         newPhotos.push(base64);
-        currentSize += fileSizeMB;
+        currentSize += actualSizeMB;
       } catch (err) {
-        console.error('Failed to load photo:', err);
+        const errorMsg = err instanceof Error ? err.message : '未知错误';
+        errors.push(`「${file.name}」: ${errorMsg}`);
+        console.error('Failed to load photo:', file.name, err);
       }
     }
 
+    // 显示成功和错误信息
     if (newPhotos.length > 0) {
       onChange([...photos, ...newPhotos]);
     }
 
+    // 显示错误提示
+    if (errors.length > 0) {
+      setUploadErrors(errors);
+    }
+
+    // 重置 input，确保下次可以选择相同文件
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -396,35 +434,79 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
           >
             支持拖拽排序 · 照片顺序对应故事线中的「照片 1」「照片 2」... · 总大小上限 {MAX_PHOTO_MB} MB
           </p>
-          {sizeError && (
-            <p
+          {/* 错误提示 */}
+          {(sizeError || uploadErrors.length > 0) && (
+            <div
               style={{
-                margin: '6px 0 0',
+                margin: '8px 0 0',
+                padding: '8px 12px',
+                background: 'rgba(255, 119, 119, 0.15)',
+                border: '1px solid rgba(255, 119, 119, 0.3)',
+                borderRadius: '6px',
                 fontSize: '11px',
                 color: '#ff7777',
-                textAlign: 'center',
                 lineHeight: '1.5'
               }}
             >
-              {sizeError.split('（如 ').map((part, i) => {
-                if (i === 0) return part;
-                const [link, rest] = part.split('）');
-                return (
-                  <React.Fragment key={i}>
-                    （如{' '}
-                    <a
-                      href="https://imagestool.com/zh_CN/compress-images"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{ color: '#9EFFE0', textDecoration: 'underline' }}
-                    >
-                      {link}
-                    </a>
-                    ）{rest}
-                  </React.Fragment>
-                );
-              })}
-            </p>
+              {sizeError && (
+                <div style={{ marginBottom: uploadErrors.length > 0 ? '6px' : 0 }}>
+                  {sizeError.split('（如 ').map((part, i) => {
+                    if (i === 0) return <span key={i}>{part}</span>;
+                    const [link, rest] = part.split('）');
+                    return (
+                      <React.Fragment key={i}>
+                        （如{' '}
+                        <a
+                          href="https://imagestool.com/zh_CN/compress-images"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{ color: '#9EFFE0', textDecoration: 'underline' }}
+                        >
+                          {link}
+                        </a>
+                        ）{rest}
+                      </React.Fragment>
+                    );
+                  })}
+                </div>
+              )}
+              {uploadErrors.length > 0 && (
+                <div>
+                  <div style={{ fontWeight: 500, marginBottom: '4px' }}>
+                    {uploadErrors.length === 1 
+                      ? '上传失败：' 
+                      : `${uploadErrors.length} 个文件上传失败：`}
+                  </div>
+                  {uploadErrors.slice(0, 3).map((error, i) => (
+                    <div key={i} style={{ marginTop: i > 0 ? '4px' : 0 }}>
+                      {error.split('（如 ').map((part, j) => {
+                        if (j === 0) return <span key={j}>{part}</span>;
+                        const [link, rest] = part.split('）');
+                        return (
+                          <React.Fragment key={j}>
+                            （如{' '}
+                            <a
+                              href="https://imagestool.com/zh_CN/compress-images"
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              style={{ color: '#9EFFE0', textDecoration: 'underline' }}
+                            >
+                              {link}
+                            </a>
+                            ）{rest}
+                          </React.Fragment>
+                        );
+                      })}
+                    </div>
+                  ))}
+                  {uploadErrors.length > 3 && (
+                    <div style={{ marginTop: '4px', opacity: 0.8 }}>
+                      ...还有 {uploadErrors.length - 3} 个文件失败
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           )}
         </div>
       </div>
