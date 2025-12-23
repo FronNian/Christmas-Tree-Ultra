@@ -15,6 +15,10 @@ const LOCAL_SHARE_KEY = 'christmas_tree_share';
 const LOCAL_CONFIG_KEY = 'christmas_tree_config';
 const LOCAL_PHOTOS_KEY = 'christmas_tree_photos';
 
+// 服务器限制（见 r2-server/server.js 校验逻辑）
+const MAX_PHOTO_COUNT = 20;      // 最多 20 张
+const MAX_PHOTO_SIZE_MB = 10;    // 单张 base64 长度上限 10MB
+
 // 分享数据接口
 export interface ShareData {
   id: string;
@@ -37,6 +41,33 @@ const getShareSizeMB = (data: ShareData): number => {
   } catch {
     return 0;
   }
+};
+
+// 估算 base64 图片大小（MB）
+const estimateBase64SizeMB = (base64: string): number => {
+  if (!base64) return 0;
+  const commaIndex = base64.indexOf(',');
+  const data = commaIndex >= 0 ? base64.slice(commaIndex + 1) : base64;
+  const padding = (data.endsWith('==') ? 2 : data.endsWith('=') ? 1 : 0);
+  const bytes = (data.length * 3) / 4 - padding;
+  return bytes / (1024 * 1024);
+};
+
+// 前置校验：照片数量/单张大小（与后端保持一致，避免 400）
+const validatePhotos = (photos: string[]): { ok: boolean; error?: string } => {
+  if (photos.length > MAX_PHOTO_COUNT) {
+    return { ok: false, error: `照片数量超过 ${MAX_PHOTO_COUNT} 张，请删减后再试。` };
+  }
+  for (let i = 0; i < photos.length; i++) {
+    const size = estimateBase64SizeMB(photos[i]);
+    if (size > MAX_PHOTO_SIZE_MB) {
+      return {
+        ok: false,
+        error: `第 ${i + 1} 张图片过大（约 ${size.toFixed(1)} MB），单张上限 ${MAX_PHOTO_SIZE_MB} MB。请压缩后再试（推荐 https://imagestool.com/zh_CN/compress-images ）。`
+      };
+    }
+  }
+  return { ok: true };
 };
 
 // 本地存储的分享信息
@@ -124,6 +155,12 @@ export const uploadShare = async (
       return { success: false, error: '上传服务未配置，请联系管理员（缺少 R2_API_URL）。' };
     }
 
+    // 预校验：数量与单张大小（与后端校验一致，提前给出友好提示）
+    const photoValidation = validatePhotos(photos);
+    if (!photoValidation.ok) {
+      return { success: false, error: photoValidation.error };
+    }
+
     const localShare = getLocalShare();
     
     // 如果已有分享，返回错误提示用户使用编辑功能
@@ -176,7 +213,18 @@ export const uploadShare = async (
       // 400/413 等前端可识别错误，返回用户提示
       let serverMessage = '';
       try {
-        serverMessage = await response.text();
+        // 优先解析 JSON，携带 details
+        const text = await response.text();
+        serverMessage = text;
+        try {
+          const parsed = JSON.parse(text);
+          if (parsed?.error || parsed?.details) {
+            const details = Array.isArray(parsed.details) ? parsed.details.join('; ') : '';
+            serverMessage = `${parsed.error || ''}${details ? `: ${details}` : ''}`;
+          }
+        } catch {
+          // 非 JSON，保留原文
+        }
       } catch {
         // ignore
       }
@@ -222,6 +270,12 @@ export const updateShare = async (
       return { success: false, error: '上传服务未配置，请联系管理员（缺少 R2_API_URL）。' };
     }
 
+    // 预校验：数量与单张大小
+    const photoValidation = validatePhotos(photos);
+    if (!photoValidation.ok) {
+      return { success: false, error: photoValidation.error };
+    }
+
     // 先获取现有数据验证 token
     const existing = await getShare(shareId);
     if (!existing) {
@@ -265,7 +319,17 @@ export const updateShare = async (
     if (!response.ok) {
       let serverMessage = '';
       try {
-        serverMessage = await response.text();
+        const text = await response.text();
+        serverMessage = text;
+        try {
+          const parsed = JSON.parse(text);
+          if (parsed?.error || parsed?.details) {
+            const details = Array.isArray(parsed.details) ? parsed.details.join('; ') : '';
+            serverMessage = `${parsed.error || ''}${details ? `: ${details}` : ''}`;
+          }
+        } catch {
+          // keep raw text
+        }
       } catch {
         // ignore
       }
