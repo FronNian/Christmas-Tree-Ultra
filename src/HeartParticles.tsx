@@ -389,28 +389,48 @@ const UnifiedPhotoDisplay = ({
   const lastCarouselSwitchRef = useRef(0);
   const shrinkProgressRef = useRef(0);
   const wasVisibleRef = useRef(false);
+  const lastLoggedPhaseRef = useRef<PhotoDisplayPhase | null>(null);
   
   // 环绕参数
   const orbitRadius = isMobileDevice ? 8 : 12;
   const photoSize = isMobileDevice ? 0.7 : 1.0;
-  // 预留参数（未来可能重新启用环绕/收缩阶段）
-  // const orbitDuration = 5000; // 环绕阶段持续5秒
-  // const shrinkDuration = 800; // 收缩动画持续时间
-  const slideDuration = 600; // 单次切换动画时间
+  // 使用「秒」作为内部时间单位，避免 ms / s 混淆
+  const orbitDuration = 5;      // 环绕阶段持续 5 秒
+  const shrinkDuration = 0.8;   // 收缩动画持续时间 0.8 秒
+  const slideDuration = 0.6;    // 单次切换动画时间 0.6 秒
   // 轮播阶段的照片缩放（比环绕时大）
   const carouselScale = photoScale * (isMobileDevice ? 1.6 : 2.2);
   
-  // visible 变化时重置状态（直接进入轮播阶段，避免等待 orbit 5s）
+  // 初始一次性日志：记录爱心预览配置
+  useEffect(() => {
+    fetch('http://127.0.0.1:7242/ingest/c81cdc3a-c950-4789-84e9-c3279bce9827',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        sessionId:'debug-session',
+        runId:'pre-fix',
+        hypothesisId:'H5',
+        location:'HeartParticles.tsx:UnifiedPhotoDisplay:init',
+        message:'UnifiedPhotoDisplay init',
+        data:{photoCount:photos.length,interval,photoScale,frameColor},
+        timestamp:Date.now()
+      })
+    }).catch(()=>{});
+  // 仅在挂载时记录一次
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  
+  // visible 变化时重置状态：重新从环绕阶段开始
   useEffect(() => {
     if (visible && !wasVisibleRef.current) {
-      setPhase('carousel');
+      setPhase('orbit');
       phaseTimeRef.current = 0;
       rotationRef.current = 0;
-      shrinkProgressRef.current = 1;
+      shrinkProgressRef.current = 0;
       setCarouselIndex(0);
       setSlideProgress(0);
       setIsSliding(false);
-      lastCarouselSwitchRef.current = Date.now();
+      lastCarouselSwitchRef.current = 0;
     }
     wasVisibleRef.current = visible;
   }, [visible]);
@@ -422,23 +442,26 @@ const UnifiedPhotoDisplay = ({
     
     // 暂停时不更新时间和动画
     if (!paused) {
-      phaseTimeRef.current += delta * 1000;
-      
-      // 直接使用轮播阶段，不再经过 orbit/shrinking 过渡
-      if (phase !== 'carousel') {
-        setPhase('carousel');
-        phaseTimeRef.current = 0;
-        shrinkProgressRef.current = 1;
-        lastCarouselSwitchRef.current = now;
-      }
-      
-      // 环绕阶段持续旋转
+      // 统一使用秒为单位
+      phaseTimeRef.current += delta;
+
+      // 环绕阶段：围绕中心旋转
       if (phase === 'orbit') {
         rotationRef.current += delta * 0.5;
-      }
-      
-      // 轮播阶段切换照片
-      if (phase === 'carousel' && photos.length > 1) {
+        if (phaseTimeRef.current >= orbitDuration) {
+          setPhase('shrinking');
+          phaseTimeRef.current = 0;
+        }
+      } else if (phase === 'shrinking') {
+        // 收缩阶段：从环绕过渡到中心
+        const t = Math.min(1, phaseTimeRef.current / shrinkDuration);
+        shrinkProgressRef.current = t;
+        if (t >= 1) {
+          setPhase('carousel');
+          phaseTimeRef.current = 0;
+          lastCarouselSwitchRef.current = now;
+        }
+      } else if (phase === 'carousel' && photos.length > 1) {
         if (isSliding) {
           const elapsed = now - slideStartRef.current;
           const newProgress = Math.min(1, elapsed / slideDuration);
@@ -448,20 +471,70 @@ const UnifiedPhotoDisplay = ({
           if (newProgress >= 1) {
             setIsSliding(false);
             setSlideProgress(0);
-            setCarouselIndex((carouselIndex + 1) % photos.length);
+            const nextIndex = (carouselIndex + 1) % photos.length;
+            
+            // 完成一次切换的日志
+            fetch('http://127.0.0.1:7242/ingest/c81cdc3a-c950-4789-84e9-c3279bce9827',{
+              method:'POST',
+              headers:{'Content-Type':'application/json'},
+              body:JSON.stringify({
+                sessionId:'debug-session',
+                runId:'pre-fix',
+                hypothesisId:'H5',
+                location:'HeartParticles.tsx:UnifiedPhotoDisplay:switch-complete',
+                message:'photo switch complete',
+                data:{fromIndex:carouselIndex,toIndex:nextIndex,now},
+                timestamp:Date.now()
+              })
+            }).catch(()=>{});
+
+            setCarouselIndex(nextIndex);
             lastCarouselSwitchRef.current = now;
           }
         } else {
           // 控制总展示时长≈ interval（包含0.6s切换动画），避免实际比设置值慢
           const effectiveInterval = Math.max(200, interval - slideDuration);
           if (now - lastCarouselSwitchRef.current >= effectiveInterval) {
-          setIsSliding(true);
-          slideStartRef.current = now;
+            setIsSliding(true);
+            slideStartRef.current = now;
+            
+            // 开始一次切换的日志
+            fetch('http://127.0.0.1:7242/ingest/c81cdc3a-c950-4789-84e9-c3279bce9827',{
+              method:'POST',
+              headers:{'Content-Type':'application/json'},
+              body:JSON.stringify({
+                sessionId:'debug-session',
+                runId:'pre-fix',
+                hypothesisId:'H5',
+                location:'HeartParticles.tsx:UnifiedPhotoDisplay:switch-start',
+                message:'photo switch start',
+                data:{fromIndex:carouselIndex,effectiveInterval,now},
+                timestamp:Date.now()
+              })
+            }).catch(()=>{});
           }
         }
       }
     }
     
+    // 阶段变更日志（每种状态只记录一次）
+    if (lastLoggedPhaseRef.current !== phase) {
+      lastLoggedPhaseRef.current = phase;
+      fetch('http://127.0.0.1:7242/ingest/c81cdc3a-c950-4789-84e9-c3279bce9827',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({
+          sessionId:'debug-session',
+          runId:'pre-fix',
+          hypothesisId:'H5',
+          location:'HeartParticles.tsx:UnifiedPhotoDisplay:phase-change',
+          message:'phase changed',
+          data:{phase,phaseTime:phaseTimeRef.current},
+          timestamp:Date.now()
+        })
+      }).catch(()=>{});
+    }
+
     // 更新每张照片的位置
     const baseRotation = rotationRef.current;
     const shrinkEased = 1 - Math.pow(1 - shrinkProgressRef.current, 3);
@@ -1201,10 +1274,46 @@ export const HeartParticles = ({
     if (!visible) {
       setPaused(false);
     }
-  }, [visible]);
+
+    if (visible) {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/c81cdc3a-c950-4789-84e9-c3279bce9827',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({
+          sessionId:'debug-session',
+          runId:'pre-fix',
+          hypothesisId:'H4',
+          location:'HeartParticles.tsx:visible-effect',
+          message:'HeartParticles became visible',
+          data:{count,hasCenterPhotos:!!(centerPhotos && centerPhotos.length),photoInterval},
+          timestamp:Date.now()
+        })
+      }).catch(()=>{});
+      // #endregion
+    }
+  }, [visible, count, centerPhotos, photoInterval]);
   
-  useFrame((_, delta) => {
+  useFrame((state, delta) => {
     if (!pointsRef.current || !groupRef.current || !materialRef.current) return;
+
+    // #region agent log
+    if (!initializedRef.current && visible) {
+      fetch('http://127.0.0.1:7242/ingest/c81cdc3a-c950-4789-84e9-c3279bce9827',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({
+          sessionId:'debug-session',
+          runId:'pre-fix',
+          hypothesisId:'H4',
+          location:'HeartParticles.tsx:first-frame',
+          message:'HeartParticles first active frame',
+          data:{cameraZ:state.camera.position.z},
+          timestamp:Date.now()
+        })
+      }).catch(()=>{});
+    }
+    // #endregion
     
     // 更新动画时间（暂停时不更新）
     if (!paused) {

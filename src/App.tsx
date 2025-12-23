@@ -241,6 +241,8 @@ export default function GrandTreeApp() {
 
   // 是否隐藏圣诞树（显示特效时）
   const [hideTree, setHideTree] = useState(false);
+  // 故事线「爱心特效」步骤下的照片间隔覆盖值（ms），非故事线模式为 null
+  const [heartStepIntervalOverride, setHeartStepIntervalOverride] = useState<number | null>(null);
 
   // 获取已配置的文字列表（使用 useMemo 稳定引用）
   const configuredTexts = useMemo(() => 
@@ -248,9 +250,6 @@ export default function GrandTreeApp() {
     (sceneConfig.gestureText ? [sceneConfig.gestureText] : ['MERRY CHRISTMAS']),
     [sceneConfig.gestureTexts, sceneConfig.gestureText]
   );
-
-  // 获取照片轮播间隔配置
-  const heartPhotoInterval = (sceneConfig.heartEffect as { photoInterval?: number } | undefined)?.photoInterval || 3000;
 
   // 获取文字切换间隔（毫秒）
   const textSwitchIntervalMs = (sceneConfig.textSwitchInterval || 3) * 1000;
@@ -333,8 +332,14 @@ export default function GrandTreeApp() {
     sceneConfig.timeline,
     uploadedPhotos.length,
     handleTimelineComplete,
-    configuredTexts,
-    heartPhotoInterval
+    configuredTexts
+  );
+
+  // 是否可以播放故事线（需要启用且至少有一张照片）
+  const canPlayTimeline = !!(
+    sceneConfig.timeline?.enabled &&
+    sceneConfig.timeline.steps.length > 0 &&
+    uploadedPhotos.length > 0
   );
 
   // 故事线步骤 - 简化版：文字特效只显示第一条，不轮播
@@ -359,6 +364,26 @@ export default function GrandTreeApp() {
         if (heartTimeoutRef.current) clearTimeout(heartTimeoutRef.current);
         setShowHeart(true);
         setHideTree(true);
+
+        // 在故事线模式下，将「持续时间」视为每张照片的中心预览时间
+        const perPhoto = currentStep.duration || 0;
+        setHeartStepIntervalOverride(perPhoto > 0 ? perPhoto : null);
+
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/c81cdc3a-c950-4789-84e9-c3279bce9827',{
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({
+            sessionId:'debug-session',
+            runId:'pre-fix',
+            hypothesisId:'H3',
+            location:'App.tsx:timeline-heart-step',
+            message:'enter heart step (App)',
+            data:{perPhoto,photoCount:uploadedPhotos.length},
+            timestamp:Date.now()
+          })
+        }).catch(()=>{});
+        // #endregion
       }
       // 礼物步骤 - 隐藏圣诞树，显示礼物盒
       else if (currentStep?.type === 'gift') {
@@ -383,6 +408,7 @@ export default function GrandTreeApp() {
         setShowText(false);
         setShowHeart(false);
         setHideTree(true);
+        setHeartStepIntervalOverride(null);
       }
     }
     
@@ -391,6 +417,7 @@ export default function GrandTreeApp() {
       setShowText(false);
       setShowHeart(false);
       setHideTree(false);
+      setHeartStepIntervalOverride(null);
     }
     
     prevTimelineStepRef.current = isPlaying ? currentStepIndex : -1;
@@ -945,7 +972,7 @@ export default function GrandTreeApp() {
     
     document.addEventListener('keydown', handleGlobalKeyDown);
     return () => document.removeEventListener('keydown', handleGlobalKeyDown);
-  }, [mobile, showSettings, modalVisible, showTutorial, showPrivacy, showKeyboardHelp, showPhotoManager, demoMode, toggleMusic, triggerEffect, sceneConfig.timeline, timeline.state.isPlaying, timeline.actions]);
+  }, [mobile, showSettings, modalVisible, showTutorial, showPrivacy, showKeyboardHelp, showPhotoManager, demoMode, toggleMusic, triggerEffect, sceneConfig.timeline, canPlayTimeline, timeline.state.isPlaying, timeline.actions]);
 
   // 加载本地保存的照片（配置已在 useState 初始化时加载）
   useEffect(() => {
@@ -1215,6 +1242,7 @@ export default function GrandTreeApp() {
             heartCenterPhoto={timeline.heartPhotoIndex !== null ? uploadedPhotos[timeline.heartPhotoIndex] : undefined}
             heartCenterPhotos={uploadedPhotos.length > 0 ? uploadedPhotos : undefined}
             heartPhotoInterval={(sceneConfig.heartEffect as { photoInterval?: number } | undefined)?.photoInterval || 3000}
+            heartPhotoIntervalOverride={heartStepIntervalOverride}
             onHeartPaused={setHeartPaused}
             showGiftBox={timeline.showGift}
             giftBoxConfig={timeline.giftConfig ? {
@@ -1257,6 +1285,7 @@ export default function GrandTreeApp() {
           photoCount={uploadedPhotos.length}
           photoPaths={uploadedPhotos}
           onTimelinePreview={() => {
+            if (!canPlayTimeline) return;
             if (timeline.state.isPlaying) {
               timeline.actions.stop();
             } else {
@@ -1380,11 +1409,12 @@ export default function GrandTreeApp() {
         {sceneConfig.timeline?.enabled && sceneConfig.timeline.steps.length > 0 && (
           <button
             onClick={() => {
-              if (timeline.state.isPlaying) {
-                timeline.actions.stop();
-              } else {
-                timeline.actions.play();
-              }
+            if (!canPlayTimeline) return;
+            if (timeline.state.isPlaying) {
+              timeline.actions.stop();
+            } else {
+              timeline.actions.play();
+            }
             }}
             style={{ 
               ...buttonStyle(timeline.state.isPlaying, mobile), 

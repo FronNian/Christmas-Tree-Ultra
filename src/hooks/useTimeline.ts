@@ -69,8 +69,7 @@ export function useTimeline(
   config: TimelineConfig | undefined,
   totalPhotos: number,
   onComplete?: () => void,
-  _configuredTexts?: string[], // 保留参数以保持 API 兼容性，但不再使用
-  photoInterval: number = 3000
+  _configuredTexts?: string[] // 保留参数以保持 API 兼容性，但不再使用
 ): UseTimelineReturn {
   const [state, setState] = useState<TimelineState>({
     isPlaying: false,
@@ -111,22 +110,34 @@ export function useTimeline(
 
   // 计算步骤的实际持续时间
   const getStepDuration = useCallback((step: TimelineStep): number => {
-    // 爱心步骤：如果显示照片，需要足够时间展示所有照片
-    if (step.type === 'heart' && step.showPhoto) {
-      if (totalPhotos > 0) {
-        const gatherTime = 2000;
-        const slideTime = 600;
-        const lastPhotoExtraTime = 1000;
-        const calculatedDuration = gatherTime + 
-          (totalPhotos * photoInterval) + 
-          ((totalPhotos - 1) * slideTime) + 
-          lastPhotoExtraTime;
-        return Math.max(step.duration, calculatedDuration);
-      } else {
-        // 照片还没加载时，给一个较长的默认时间
-        // 这样即使照片加载慢，爱心特效也不会太快消失
-        return Math.max(step.duration, 8000);
-      }
+    // 爱心步骤：将「持续时间」视为【每张照片在中心预览的时间】，
+    // 实际步骤总时长 ≈ 环绕(5s) + 收起(1s) + 每张照片完整轮播时间 * 张数
+    if (step.type === 'heart') {
+      const perPhoto = Math.max(step.duration, 500); // 每张照片至少 500ms
+      const photoCount = Math.max(1, totalPhotos);
+
+      const ORBIT_MS = 5000;  // 环绕时间
+      const SHRINK_MS = 1000; // 收起时间
+
+      const total = ORBIT_MS + SHRINK_MS + perPhoto * photoCount;
+
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/c81cdc3a-c950-4789-84e9-c3279bce9827',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({
+          sessionId:'debug-session',
+          runId:'pre-fix',
+          hypothesisId:'H1',
+          location:'useTimeline.ts:getStepDuration',
+          message:'heart step duration computed',
+          data:{perPhoto,photoCount,total},
+          timestamp:Date.now()
+        })
+      }).catch(()=>{});
+      // #endregion
+
+      return total;
     }
     
     // 书信步骤：根据字数自动计算持续时间
@@ -139,10 +150,9 @@ export function useTimeline(
       return Math.max(step.duration, calculatedDuration);
     }
     
-    // 文字步骤：直接使用用户设置的 duration
-    // 不再根据文字数量自动计算，让用户完全控制持续时间
+    // 文字步骤：直接使用用户设置的 duration，让用户完全控制持续时间
     return step.duration;
-  }, [totalPhotos, photoInterval]);
+  }, [totalPhotos]);
 
   // 播放指定步骤
   const playStep = useCallback((index: number) => {
@@ -164,6 +174,22 @@ export function useTimeline(
     const step = config.steps[index];
     const delay = step.delay || 0;
     const actualDuration = getStepDuration(step);
+
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/c81cdc3a-c950-4789-84e9-c3279bce9827',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        sessionId:'debug-session',
+        runId:'pre-fix',
+        hypothesisId:'H2',
+        location:'useTimeline.ts:playStep',
+        message:'playStep invoked',
+        data:{index,type:step.type,duration:step.duration,actualDuration,totalPhotos},
+        timestamp:Date.now()
+      })
+    }).catch(()=>{});
+    // #endregion
 
     setState({
       isPlaying: true,

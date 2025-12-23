@@ -45,6 +45,7 @@ interface ExperienceProps {
   heartCenterPhoto?: string;
   heartCenterPhotos?: string[];
   heartPhotoInterval?: number;
+  heartPhotoIntervalOverride?: number | null;
   heartBottomText?: string;
   palmMoveRef?: React.MutableRefObject<{ x: number; y: number } | null>;
   zoomRef?: React.MutableRefObject<number>;
@@ -79,6 +80,7 @@ export const Experience = memo(({
   heartCenterPhoto,
   heartCenterPhotos,
   heartPhotoInterval = 3000,
+  heartPhotoIntervalOverride = null,
   heartBottomText,
   palmMoveRef,
   zoomRef,
@@ -466,7 +468,7 @@ export const Experience = memo(({
         size={config.heartEffect?.size}
         centerPhoto={heartCenterPhoto}
         centerPhotos={heartCenterPhotos}
-        photoInterval={heartPhotoInterval}
+        photoInterval={heartPhotoIntervalOverride ?? heartPhotoInterval}
         photoScale={config.heartEffect?.photoScale || 1}
         frameColor={heartFrameColor}
         glowTrail={{

@@ -80,6 +80,8 @@ export default function SharePage({ shareId }: SharePageProps) {
     }
   });
   const [hideTree, setHideTree] = useState(false);
+  // 故事线「爱心特效」步骤下的照片间隔覆盖值（ms），非故事线模式为 null
+  const [heartStepIntervalOverride, setHeartStepIntervalOverride] = useState<number | null>(null);
   const [preloadTextPlayed, setPreloadTextPlayed] = useState(false);
   // WebGL 上下文丢失时重建 Canvas（移动端/低端设备可能出现）
   const handleWebglContextLost = useCallback((e?: Event) => {
@@ -136,9 +138,6 @@ export default function SharePage({ shareId }: SharePageProps) {
     [sceneConfig.gestureTexts, sceneConfig.gestureText]
   );
 
-  // 获取照片轮播间隔配置
-  const heartPhotoInterval = (sceneConfig.heartEffect as { photoInterval?: number } | undefined)?.photoInterval || 3000;
-
   // 获取文字切换间隔（毫秒）
   const textSwitchIntervalMs = (sceneConfig.textSwitchInterval || 3) * 1000;
 
@@ -159,8 +158,7 @@ export default function SharePage({ shareId }: SharePageProps) {
     sceneConfig.timeline,
     shareData?.photos?.length || 0,
     handleTimelineComplete,
-    configuredTexts,
-    heartPhotoInterval
+    configuredTexts
   );
 
   // 监听全屏状态变化
@@ -411,6 +409,26 @@ export default function SharePage({ shareId }: SharePageProps) {
         if (heartTimeoutRef.current) clearTimeout(heartTimeoutRef.current);
         setShowHeart(true);
         setHideTree(true);
+
+        // 故事线爱心步骤：将「持续时间」视为每张照片的中心预览时间
+        const perPhoto = currentStep.duration || 0;
+        setHeartStepIntervalOverride(perPhoto > 0 ? perPhoto : null);
+
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/c81cdc3a-c950-4789-84e9-c3279bce9827',{
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({
+            sessionId:'debug-session',
+            runId:'pre-fix',
+            hypothesisId:'H3',
+            location:'SharePage.tsx:timeline-heart-step',
+            message:'enter heart step (SharePage)',
+            data:{perPhoto,photoCount:shareData?.photos?.length || 0},
+            timestamp:Date.now()
+          })
+        }).catch(()=>{});
+        // #endregion
       }
       // 礼物步骤 - 隐藏圣诞树，显示礼物盒
       else if (currentStep?.type === 'gift') {
@@ -435,6 +453,7 @@ export default function SharePage({ shareId }: SharePageProps) {
         setShowText(false);
         setShowHeart(false);
         setHideTree(true);
+        setHeartStepIntervalOverride(null);
       }
     }
     
@@ -443,6 +462,7 @@ export default function SharePage({ shareId }: SharePageProps) {
       setShowText(false);
       setShowHeart(false);
       setHideTree(false);
+      setHeartStepIntervalOverride(null);
     }
     
     prevTimelineStepRef.current = isPlaying ? currentStepIndex : -1;
@@ -944,6 +964,7 @@ export default function SharePage({ shareId }: SharePageProps) {
             heartCenterPhoto={timeline.heartPhotoIndex !== null ? shareData.photos[timeline.heartPhotoIndex] : undefined}
             heartCenterPhotos={shareData.photos.length > 0 ? shareData.photos : undefined}
             heartPhotoInterval={(sceneConfig.heartEffect as { photoInterval?: number } | undefined)?.photoInterval || 3000}
+            heartPhotoIntervalOverride={heartStepIntervalOverride}
             heartBottomText={(sceneConfig.heartEffect as { bottomText?: string } | undefined)?.bottomText}
             showGiftBox={timeline.showGift}
             giftBoxConfig={timeline.giftConfig ? {
