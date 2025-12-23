@@ -354,7 +354,9 @@ export const updateShare = async (
  */
 export const getShare = async (shareId: string): Promise<ShareData | null> => {
   try {
-    const response = await fetch(`${R2_PUBLIC_URL}/shares/${shareId}.json`);
+    // 加上时间戳参数 + 关闭缓存，避免云端/CDN 对 JSON 的缓存导致更新后的分享看起来“没生效”
+    const url = `${R2_PUBLIC_URL}/shares/${shareId}.json?ts=${Date.now()}`;
+    const response = await fetch(url, { cache: 'no-store' });
     
     if (!response.ok) {
       if (response.status === 404) {
