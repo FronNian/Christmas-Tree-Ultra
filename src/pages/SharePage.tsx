@@ -6,6 +6,7 @@ import { CHRISTMAS_MUSIC_URL } from '../config';
 import { THEME_PRESETS } from '../config/themes';
 import { isMobile, isTablet, getDefaultSceneConfig, toggleFullscreen, isFullscreen, isFullscreenSupported, enterFullscreen, lockLandscape } from '../utils/helpers';
 import { sanitizeShareConfig, sanitizePhotos, sanitizeText } from '../utils/sanitize';
+import { createAudioAnalyser, startAudioLevelUpdate } from '../utils/audioAnalysis';
 import { getShare } from '../lib/r2';
 import type { ShareData } from '../lib/r2';
 import type { SceneState, SceneConfig, PhotoScreenPosition } from '../types';
@@ -103,6 +104,9 @@ export default function SharePage({ shareId }: SharePageProps) {
 
   // Refs
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioAnalyserRef = useRef<ReturnType<typeof createAudioAnalyser> | null>(null);
+  const audioLevelUpdateStopRef = useRef<(() => void) | null>(null);
+  const audioLevelRef = useRef<number | undefined>(0);
   const heartTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const textEffectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const textSwitchTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -679,9 +683,44 @@ export default function SharePage({ shareId }: SharePageProps) {
     if (audioRef.current) {
       const currentSrc = audioRef.current.src;
       // 检查是否需要更换音乐源
-      if (!currentSrc.includes(musicUrl.split('/').pop() || '')) {
+      const needsReload = !currentSrc.includes(musicUrl.split('/').pop() || '');
+      
+      if (needsReload) {
+        // 停止旧的更新循环
+        if (audioLevelUpdateStopRef.current) {
+          audioLevelUpdateStopRef.current();
+          audioLevelUpdateStopRef.current = null;
+        }
+        
+        // 清理旧的分析器
+        if (audioAnalyserRef.current) {
+          audioAnalyserRef.current.dispose();
+          audioAnalyserRef.current = null;
+        }
+        
         audioRef.current.src = musicUrl;
+        audioRef.current.currentTime = 0;
+        audioRef.current.load(); // 强制重新加载音频
+        
+        // 等待音频加载完成后再创建分析器
+        const handleLoadedData = () => {
+          if (audioRef.current) {
+            audioAnalyserRef.current = createAudioAnalyser(audioRef.current);
+            if (audioAnalyserRef.current) {
+              audioLevelUpdateStopRef.current = startAudioLevelUpdate(audioAnalyserRef.current, audioLevelRef);
+            }
+          }
+          audioRef.current?.removeEventListener('loadeddata', handleLoadedData);
+        };
+        
+        audioRef.current.addEventListener('loadeddata', handleLoadedData);
+        
+        // 如果音频已经加载完成，立即创建分析器
+        if (audioRef.current.readyState >= 2) {
+          handleLoadedData();
+        }
       }
+      
       audioRef.current.volume = volume;
       return;
     }
@@ -689,6 +728,12 @@ export default function SharePage({ shareId }: SharePageProps) {
     audioRef.current = new Audio(musicUrl);
     audioRef.current.loop = true;
     audioRef.current.volume = volume;
+
+    // 创建音频分析器
+    if (audioRef.current) {
+      audioAnalyserRef.current = createAudioAnalyser(audioRef.current);
+      audioLevelUpdateStopRef.current = startAudioLevelUpdate(audioAnalyserRef.current, audioLevelRef);
+    }
 
     // 教程或音乐提示显示时不播放音乐
     if (!showTutorial && !showSoundPrompt) {
@@ -711,6 +756,14 @@ export default function SharePage({ shareId }: SharePageProps) {
     document.addEventListener('touchstart', handleInteraction);
 
     return () => {
+      if (audioLevelUpdateStopRef.current) {
+        audioLevelUpdateStopRef.current();
+        audioLevelUpdateStopRef.current = null;
+      }
+      if (audioAnalyserRef.current) {
+        audioAnalyserRef.current.dispose();
+        audioAnalyserRef.current = null;
+      }
       document.removeEventListener('click', handleInteraction);
       document.removeEventListener('touchstart', handleInteraction);
     };
@@ -720,6 +773,14 @@ export default function SharePage({ shareId }: SharePageProps) {
   // 组件卸载时清理音频
   useEffect(() => {
     return () => {
+      if (audioLevelUpdateStopRef.current) {
+        audioLevelUpdateStopRef.current();
+        audioLevelUpdateStopRef.current = null;
+      }
+      if (audioAnalyserRef.current) {
+        audioAnalyserRef.current.dispose();
+        audioAnalyserRef.current = null;
+      }
       if (audioRef.current) {
         audioRef.current.pause();
         audioRef.current = null;
@@ -762,19 +823,83 @@ export default function SharePage({ shareId }: SharePageProps) {
       
       const preset = PRESET_MUSIC.find(m => m.id === timelineMusic);
       if (preset && !audioRef.current.src.includes(preset.url.split('/').pop() || '')) {
+        // 停止旧的更新循环
+        if (audioLevelUpdateStopRef.current) {
+          audioLevelUpdateStopRef.current();
+          audioLevelUpdateStopRef.current = null;
+        }
+        
+        // 清理旧的分析器
+        if (audioAnalyserRef.current) {
+          audioAnalyserRef.current.dispose();
+          audioAnalyserRef.current = null;
+        }
+        
         const wasPlaying = !audioRef.current.paused;
         audioRef.current.src = preset.url;
         audioRef.current.currentTime = 0;
+        audioRef.current.load();
+        
+        // 等待音频加载完成后再创建分析器
+        const handleLoadedData = () => {
+          if (audioRef.current) {
+            audioAnalyserRef.current = createAudioAnalyser(audioRef.current);
+            if (audioAnalyserRef.current) {
+              audioLevelUpdateStopRef.current = startAudioLevelUpdate(audioAnalyserRef.current, audioLevelRef);
+            }
+          }
+          audioRef.current?.removeEventListener('loadeddata', handleLoadedData);
+        };
+        
+        audioRef.current.addEventListener('loadeddata', handleLoadedData);
+        
+        // 如果音频已经加载完成，立即创建分析器
+        if (audioRef.current.readyState >= 2) {
+          handleLoadedData();
+        }
+        
         if (wasPlaying) {
           audioRef.current.play().catch(() => {});
         }
       }
     } else if (!isPlaying && previousMusicRef.current !== null) {
       // 停止时恢复原来配置的音乐
+      // 停止旧的更新循环
+      if (audioLevelUpdateStopRef.current) {
+        audioLevelUpdateStopRef.current();
+        audioLevelUpdateStopRef.current = null;
+      }
+      
+      // 清理旧的分析器
+      if (audioAnalyserRef.current) {
+        audioAnalyserRef.current.dispose();
+        audioAnalyserRef.current = null;
+      }
+      
       const wasPlaying = !audioRef.current.paused;
       const originalMusicUrl = getMusicUrl(); // 使用配置的音乐
       audioRef.current.src = originalMusicUrl;
       audioRef.current.currentTime = 0;
+      audioRef.current.load();
+      
+      // 等待音频加载完成后再创建分析器
+      const handleLoadedData = () => {
+        if (audioRef.current) {
+          audioAnalyserRef.current = createAudioAnalyser(audioRef.current);
+          if (audioAnalyserRef.current) {
+            audioLevelUpdateStopRef.current = startAudioLevelUpdate(audioAnalyserRef.current, audioLevelRef);
+          }
+        }
+        audioRef.current?.removeEventListener('loadeddata', handleLoadedData);
+      };
+      
+      audioRef.current.addEventListener('loadeddata', handleLoadedData);
+      
+      // 如果音频已经加载完成，立即创建分析器
+      if (audioRef.current.readyState >= 2) {
+        handleLoadedData();
+      }
+      
       if (wasPlaying) {
         audioRef.current.play().catch(() => {});
       }
@@ -974,6 +1099,7 @@ export default function SharePage({ shareId }: SharePageProps) {
             isGiftWaiting={timeline.isGiftWaiting}
             isGiftOpen={timeline.isGiftOpen}
             onGiftOpen={timeline.onGiftOpen}
+            audioLevelRef={audioLevelRef}
             onAssetsLoaded={() => setAssetsReady(true)}
           />
         </Canvas>
@@ -1122,11 +1248,13 @@ export default function SharePage({ shareId }: SharePageProps) {
       />
 
       {/* 歌词显示 */}
-      <LyricsDisplay
-        lrcUrl={getLrcUrl()}
-        audioRef={audioRef}
-        visible={!!getLrcUrl() && (sceneConfig.music?.showLyrics ?? true)}
-      />
+      {sceneConfig.music && (
+        <LyricsDisplay
+          lrcUrl={getLrcUrl()}
+          audioRef={audioRef}
+          visible={!!getLrcUrl() && (sceneConfig.music.showLyrics !== false)}
+        />
+      )}
 
       {/* 使用教程 */}
       {showTutorial && <WelcomeTutorial onClose={() => setShowTutorial(false)} isSharePage gestureConfig={sceneConfig.gestures} />}

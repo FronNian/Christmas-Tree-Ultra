@@ -535,7 +535,8 @@ export const getDefaultSceneConfig = (forceMinimal = false): Record<string, unkn
     fog: { enabled: true, opacity: 0.3, count: 800, size: 0.8, spread: 1, height: 1.5 },
     music: {
       selected: 'christmas-stars',
-      volume: 0.5
+      volume: 0.5,
+      showLyrics: true
     },
     gestures: {
       Closed_Fist: 'formed',
