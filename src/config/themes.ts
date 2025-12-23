@@ -19,7 +19,18 @@ export const THEME_PRESETS: Record<ThemeKey, Partial<SceneConfig>> = {
     spiralRibbon: { enabled: true, color: '#FF2E63', glowColor: '#FFD700', width: 0.8, turns: 5, double: false },
     glowingStreaks: { enabled: true, count: 5, color: '#FFD700', speed: 1, tailLength: 1.2, lineWidth: 3 },
     textEffect: { color: '#FFD700' },
-    heartEffect: { color: '#FF2E63' }
+    heartEffect: { color: '#FF2E63' },
+    musicWaves: {
+      enabled: true,
+      color: '#FFD700',
+      secondaryColor: '#FFFFFF',
+      lineCount: 3,
+      radius: 14,
+      width: 0.08,
+      baseAmplitude: 0.25,
+      musicStrength: 1.0,
+      speed: 1.0
+    }
   },
   icy: {
     background: { color: '#020813' },
@@ -38,7 +49,18 @@ export const THEME_PRESETS: Record<ThemeKey, Partial<SceneConfig>> = {
     textEffect: { color: '#B3E5FC' },
     heartEffect: { color: '#7DE1FF' },
     aurora: { enabled: true, colors: ['#7DE1FF', '#B3E5FC', '#0A2340'], intensity: 0.65, waveSpeed: 1, coverage: 0.8 },
-    shootingStars: { enabled: true, frequency: [4, 8], speed: 2, trailLength: 1.2, color: '#B3E5FC', glowIntensity: 1.1 }
+    shootingStars: { enabled: true, frequency: [4, 8], speed: 2, trailLength: 1.2, color: '#B3E5FC', glowIntensity: 1.1 },
+    musicWaves: {
+      enabled: true,
+      color: '#7DE1FF',
+      secondaryColor: '#B3E5FC',
+      lineCount: 3,
+      radius: 14,
+      width: 0.08,
+      baseAmplitude: 0.25,
+      musicStrength: 1.1,
+      speed: 1.1
+    }
   },
   candy: {
     background: { color: '#1a0614' },
@@ -56,7 +78,18 @@ export const THEME_PRESETS: Record<ThemeKey, Partial<SceneConfig>> = {
     glowingStreaks: { enabled: true, count: 6, color: '#FFC107', speed: 1.1, tailLength: 1.1, lineWidth: 3 },
     textEffect: { color: '#FF6FB5' },
     heartEffect: { color: '#FF6FB5' },
-    giftPile: { enabled: true, count: 18, colors: ['#FF6FB5', '#FFD1DC', '#FFC107'] }
+    giftPile: { enabled: true, count: 18, colors: ['#FF6FB5', '#FFD1DC', '#FFC107'] },
+    musicWaves: {
+      enabled: true,
+      color: '#FF6FB5',
+      secondaryColor: '#FFD1DC',
+      lineCount: 3,
+      radius: 14,
+      width: 0.08,
+      baseAmplitude: 0.25,
+      musicStrength: 1.2,
+      speed: 1.2
+    }
   }
 };
 

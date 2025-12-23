@@ -223,6 +223,19 @@ export interface FoliageConfig {
   glow: number;               // 发光强度 0.5-2
 }
 
+// 音乐波浪线（地面光轨）配置
+export interface MusicWavesConfig {
+  enabled: boolean;
+  color?: string;           // 主颜色
+  secondaryColor?: string;  // 次要颜色/尾部颜色
+  lineCount: number;        // 线条数量 1-6
+  radius: number;           // 基础半径
+  width: number;            // 线宽（视觉上控制亮度）
+  baseAmplitude: number;    // 无音乐时基础振幅
+  musicStrength: number;    // 音乐响应强度 0-2
+  speed: number;            // 流动速度 0.2-3
+}
+
 // 场景配置类型
 export interface SceneConfig {
   foliage: FoliageConfig;
@@ -289,6 +302,7 @@ export interface SceneConfig {
   shootingStars?: ShootingStarsConfig; // 流星效果
   aurora?: AuroraConfig;              // 极光背景
   fireworks?: FireworksConfig;        // 烟花效果
+  musicWaves?: MusicWavesConfig;      // 音乐波浪线（地面光轨）
   topStar?: { avatarUrl?: string; size?: number };  // 树顶星星头像和大小（默认1.0）
   intro?: {                // 开场文案配置
     enabled: boolean;

@@ -23,3 +23,4 @@ export {
   DECORATION_MATERIAL_NAMES,
   disposeGeometryCache 
 } from './DecorationGeometries';
+export { MusicWaves } from './MusicWaves';

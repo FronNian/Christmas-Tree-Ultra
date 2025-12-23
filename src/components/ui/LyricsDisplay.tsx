@@ -42,7 +42,7 @@ function parseLRC(lrcContent: string): LyricLine[] {
 export const LyricsDisplay = ({ lrcUrl, audioRef, visible }: LyricsDisplayProps) => {
   const [lyrics, setLyrics] = useState<LyricLine[]>([]);
   const [currentIndex, setCurrentIndex] = useState(-1);
-  const [isPlaying, setIsPlaying] = useState(false);
+  const [_isPlaying, setIsPlaying] = useState(false); // 保留状态以备将来使用
   const containerRef = useRef<HTMLDivElement>(null);
   const mobile = isMobile();
 
@@ -103,12 +103,17 @@ export const LyricsDisplay = ({ lrcUrl, audioRef, visible }: LyricsDisplayProps)
     };
   }, [audioRef, lyrics]);
 
-  if (!visible || !isPlaying || lyrics.length === 0 || currentIndex < 0) {
+  // 如果没有启用或没有歌词文件，不显示
+  if (!visible || lyrics.length === 0) {
     return null;
   }
 
-  const currentLyric = lyrics[currentIndex]?.text || '';
-  const nextLyric = lyrics[currentIndex + 1]?.text || '';
+  // 获取当前歌词和下一句歌词
+  const currentLyric = currentIndex >= 0 ? lyrics[currentIndex]?.text || '' : '';
+  const nextLyric = currentIndex >= 0 && currentIndex + 1 < lyrics.length ? lyrics[currentIndex + 1]?.text || '' : '';
+  
+  // 只要启用了且有歌词文件，就显示组件
+  // 即使 currentIndex < 0（还没到第一句歌词）或音乐暂停，也显示（会显示空内容或当前歌词）
 
   return (
     <div

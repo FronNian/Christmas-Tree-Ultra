@@ -786,6 +786,28 @@ export const sanitizeShareConfig = (config: unknown): Record<string, unknown> =>
     sanitized.fireworks = fireworks;
   }
   
+  // 音乐波浪线（地面光轨）配置
+  if (cfg.musicWaves && typeof cfg.musicWaves === 'object') {
+    const mw = cfg.musicWaves as Record<string, unknown>;
+    const musicWaves: Record<string, unknown> = {
+      enabled: sanitizeBoolean(mw.enabled, false),
+      lineCount: sanitizeNumber(mw.lineCount, 1, 6, 3),
+      radius: sanitizeNumber(mw.radius, 8, 20, 14),
+      width: sanitizeNumber(mw.width, 0.03, 0.15, 0.08),
+      baseAmplitude: sanitizeNumber(mw.baseAmplitude, 0.1, 0.5, 0.25),
+      musicStrength: sanitizeNumber(mw.musicStrength, 0.5, 2, 1.0),
+      speed: sanitizeNumber(mw.speed, 0.5, 2, 1.0)
+    };
+    // 颜色验证
+    if (typeof mw.color === 'string' && /^#[0-9A-Fa-f]{6}$/.test(mw.color)) {
+      musicWaves.color = mw.color;
+    }
+    if (typeof mw.secondaryColor === 'string' && /^#[0-9A-Fa-f]{6}$/.test(mw.secondaryColor)) {
+      musicWaves.secondaryColor = mw.secondaryColor;
+    }
+    sanitized.musicWaves = musicWaves;
+  }
+  
   // 视角移动灵敏度
   if (cfg.cameraSensitivity !== undefined) {
     sanitized.cameraSensitivity = sanitizeNumber(cfg.cameraSensitivity, 5, 200, 25);

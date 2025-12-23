@@ -6,6 +6,7 @@ import { Experience, GestureController, SettingsPanel, TitleOverlay, Modal, Lyri
 import { CHRISTMAS_MUSIC_URL } from './config';
 import { THEME_PRESETS, type ThemeKey } from './config/themes';
 import { isMobile, isTablet, fileToBase64, getDefaultSceneConfig, toggleFullscreen, isFullscreen, isFullscreenSupported } from './utils/helpers';
+import { createAudioAnalyser, startAudioLevelUpdate } from './utils/audioAnalysis';
 import { useTimeline } from './hooks/useTimeline';
 import { 
   uploadShare, getLocalShare, getShareUrl, updateShare, getShare,
@@ -132,6 +133,9 @@ export default function GrandTreeApp() {
 
   // Refs
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioAnalyserRef = useRef<ReturnType<typeof import('./utils/audioAnalysis').createAudioAnalyser> | null>(null);
+  const audioLevelUpdateStopRef = useRef<(() => void) | null>(null);
+  const audioLevelRef = useRef<number | undefined>(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const heartTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const textEffectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -735,28 +739,49 @@ export default function GrandTreeApp() {
     audioRef.current.loop = true;
     audioRef.current.volume = volume;
 
-    const playAudio = () => {
-      audioRef.current?.play().catch(() => setMusicPlaying(false));
-    };
-    playAudio();
+    // 创建音频分析器
+    if (audioRef.current) {
+      audioAnalyserRef.current = createAudioAnalyser(audioRef.current);
+      audioLevelUpdateStopRef.current = startAudioLevelUpdate(audioAnalyserRef.current, audioLevelRef);
+      
+      const playAudio = () => {
+        audioRef.current?.play().catch(() => setMusicPlaying(false));
+      };
+      playAudio();
 
-    const handleInteraction = () => {
-      if (audioRef.current && audioRef.current.paused) {
-        audioRef.current.play().then(() => setMusicPlaying(true)).catch(() => {});
-      }
-      document.removeEventListener('click', handleInteraction);
-      document.removeEventListener('touchstart', handleInteraction);
-    };
-    document.addEventListener('click', handleInteraction);
-    document.addEventListener('touchstart', handleInteraction);
+      const handleInteraction = () => {
+        if (audioRef.current && audioRef.current.paused) {
+          audioRef.current.play().then(() => setMusicPlaying(true)).catch(() => {});
+        }
+        document.removeEventListener('click', handleInteraction);
+        document.removeEventListener('touchstart', handleInteraction);
+      };
+      document.addEventListener('click', handleInteraction);
+      document.addEventListener('touchstart', handleInteraction);
+
+      return () => {
+        if (audioLevelUpdateStopRef.current) {
+          audioLevelUpdateStopRef.current();
+          audioLevelUpdateStopRef.current = null;
+        }
+        if (audioAnalyserRef.current) {
+          audioAnalyserRef.current.dispose();
+          audioAnalyserRef.current = null;
+        }
+        if (audioRef.current) {
+          audioRef.current.pause();
+          audioRef.current = null;
+        }
+        document.removeEventListener('click', handleInteraction);
+        document.removeEventListener('touchstart', handleInteraction);
+      };
+    }
 
     return () => {
       if (audioRef.current) {
         audioRef.current.pause();
         audioRef.current = null;
       }
-      document.removeEventListener('click', handleInteraction);
-      document.removeEventListener('touchstart', handleInteraction);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -777,13 +802,55 @@ export default function GrandTreeApp() {
     
     // 检查是否需要切换音乐源
     const currentSrc = audioRef.current.src;
-    const needsReload = 
-      (musicUrl.startsWith('data:') && !currentSrc.startsWith('data:')) ||
-      (!musicUrl.startsWith('data:') && !currentSrc.includes(encodeURIComponent(musicUrl.split('/').pop() || '')));
+    // 标准化 URL 进行比较（移除可能的查询参数和哈希）
+    const normalizeUrl = (url: string) => {
+      try {
+        const urlObj = new URL(url, window.location.href);
+        return urlObj.pathname + urlObj.search;
+      } catch {
+        return url;
+      }
+    };
+    
+    const currentNormalized = normalizeUrl(currentSrc);
+    const newNormalized = normalizeUrl(musicUrl);
+    const needsReload = currentNormalized !== newNormalized;
     
     if (needsReload) {
+      // 停止旧的更新循环
+      if (audioLevelUpdateStopRef.current) {
+        audioLevelUpdateStopRef.current();
+        audioLevelUpdateStopRef.current = null;
+      }
+      
+      // 清理旧的分析器
+      if (audioAnalyserRef.current) {
+        audioAnalyserRef.current.dispose();
+        audioAnalyserRef.current = null;
+      }
+      
       audioRef.current.src = musicUrl;
       audioRef.current.currentTime = 0;
+      audioRef.current.load(); // 强制重新加载音频
+      
+      // 等待音频加载完成后再创建分析器
+      const handleLoadedData = () => {
+        if (audioRef.current) {
+          audioAnalyserRef.current = createAudioAnalyser(audioRef.current);
+          if (audioAnalyserRef.current) {
+            audioLevelUpdateStopRef.current = startAudioLevelUpdate(audioAnalyserRef.current, audioLevelRef);
+          }
+        }
+        audioRef.current?.removeEventListener('loadeddata', handleLoadedData);
+      };
+      
+      audioRef.current.addEventListener('loadeddata', handleLoadedData);
+      
+      // 如果音频已经加载完成，立即创建分析器
+      if (audioRef.current.readyState >= 2) {
+        handleLoadedData();
+      }
+      
       if (wasPlaying) {
         audioRef.current.play().catch(() => {});
       }
@@ -818,9 +885,30 @@ export default function GrandTreeApp() {
       
       const preset = PRESET_MUSIC.find(m => m.id === timelineMusic);
       if (preset && audioRef.current.src !== preset.url) {
+        // 停止旧的更新循环
+        if (audioLevelUpdateStopRef.current) {
+          audioLevelUpdateStopRef.current();
+          audioLevelUpdateStopRef.current = null;
+        }
+        
+        // 清理旧的分析器
+        if (audioAnalyserRef.current) {
+          audioAnalyserRef.current.dispose();
+          audioAnalyserRef.current = null;
+        }
+        
         const wasPlaying = !audioRef.current.paused;
         audioRef.current.src = preset.url;
         audioRef.current.currentTime = 0;
+        
+        // 重新创建分析器
+        if (audioRef.current) {
+          audioAnalyserRef.current = createAudioAnalyser(audioRef.current);
+          if (audioAnalyserRef.current) {
+            audioLevelUpdateStopRef.current = startAudioLevelUpdate(audioAnalyserRef.current, audioLevelRef);
+          }
+        }
+        
         if (wasPlaying) {
           audioRef.current.play().catch(() => {});
         }
@@ -829,9 +917,30 @@ export default function GrandTreeApp() {
       // 停止时恢复原来的音乐
       const preset = PRESET_MUSIC.find(m => m.id === previousMusicRef.current);
       if (preset) {
+        // 停止旧的更新循环
+        if (audioLevelUpdateStopRef.current) {
+          audioLevelUpdateStopRef.current();
+          audioLevelUpdateStopRef.current = null;
+        }
+        
+        // 清理旧的分析器
+        if (audioAnalyserRef.current) {
+          audioAnalyserRef.current.dispose();
+          audioAnalyserRef.current = null;
+        }
+        
         const wasPlaying = !audioRef.current.paused;
         audioRef.current.src = preset.url;
         audioRef.current.currentTime = 0;
+        
+        // 重新创建分析器
+        if (audioRef.current) {
+          audioAnalyserRef.current = createAudioAnalyser(audioRef.current);
+          if (audioAnalyserRef.current) {
+            audioLevelUpdateStopRef.current = startAudioLevelUpdate(audioAnalyserRef.current, audioLevelRef);
+          }
+        }
+        
         if (wasPlaying) {
           audioRef.current.play().catch(() => {});
         }
@@ -1251,6 +1360,7 @@ export default function GrandTreeApp() {
             } : undefined}
             isGiftWaiting={timeline.isGiftWaiting}
             isGiftOpen={timeline.isGiftOpen}
+            audioLevelRef={audioLevelRef}
             onGiftOpen={timeline.onGiftOpen}
           />
         </Canvas>

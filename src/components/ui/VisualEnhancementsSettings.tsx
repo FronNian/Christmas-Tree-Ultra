@@ -1,13 +1,14 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
-import type { BellConfig, ShootingStarsConfig, AuroraConfig, FireworksConfig } from '../../types';
+import type { BellConfig, ShootingStarsConfig, AuroraConfig, FireworksConfig, MusicWavesConfig } from '../../types';
 import { 
   DEFAULT_BELL_CONFIG, 
   DEFAULT_SHOOTING_STARS_CONFIG, 
   DEFAULT_AURORA_CONFIG, 
-  DEFAULT_FIREWORKS_CONFIG 
+  DEFAULT_FIREWORKS_CONFIG,
+  DEFAULT_MUSIC_WAVES_CONFIG
 } from '../../config';
-import { Bell, Sparkles, Sun, Flame, ChevronDown, ChevronRight } from 'lucide-react';
+import { Bell, Sparkles, Sun, Flame, Waves, ChevronDown, ChevronRight } from 'lucide-react';
 
 // 预设颜色
 const PRESET_COLORS = [
@@ -210,10 +211,12 @@ interface VisualEnhancementsSettingsProps {
   shootingStars?: ShootingStarsConfig;
   aurora?: AuroraConfig;
   fireworks?: FireworksConfig;
+  musicWaves?: MusicWavesConfig;
   onBellsChange: (config: BellConfig) => void;
   onShootingStarsChange: (config: ShootingStarsConfig) => void;
   onAuroraChange: (config: AuroraConfig) => void;
   onFireworksChange: (config: FireworksConfig) => void;
+  onMusicWavesChange: (config: MusicWavesConfig) => void;
 }
 
 export const VisualEnhancementsSettings: React.FC<VisualEnhancementsSettingsProps> = ({
@@ -221,15 +224,18 @@ export const VisualEnhancementsSettings: React.FC<VisualEnhancementsSettingsProp
   shootingStars,
   aurora,
   fireworks,
+  musicWaves,
   onBellsChange,
   onShootingStarsChange,
   onAuroraChange,
-  onFireworksChange
+  onFireworksChange,
+  onMusicWavesChange
 }) => {
   const bellConfig = { ...DEFAULT_BELL_CONFIG, ...bells };
   const starsConfig = { ...DEFAULT_SHOOTING_STARS_CONFIG, ...shootingStars };
   const auroraConfig = { ...DEFAULT_AURORA_CONFIG, ...aurora };
   const fireworksConfig = { ...DEFAULT_FIREWORKS_CONFIG, ...fireworks };
+  const musicWavesConfig = { ...DEFAULT_MUSIC_WAVES_CONFIG, ...musicWaves };
   
   const labelStyle: React.CSSProperties = {
     display: 'flex',
@@ -517,6 +523,111 @@ export const VisualEnhancementsSettings: React.FC<VisualEnhancementsSettingsProp
               max="5"
               value={fireworksConfig.maxConcurrent}
               onChange={e => onFireworksChange({ ...fireworksConfig, maxConcurrent: Number(e.target.value) })}
+              style={sliderStyle}
+            />
+          </>
+        )}
+      </Collapsible>
+
+      {/* 音乐波浪线（地面光轨） */}
+      <Collapsible title="音乐波浪线" icon={<Waves size={14} />}>
+        <div style={labelStyle}>
+          <span>启用波浪线</span>
+          <input
+            type="checkbox"
+            checked={musicWavesConfig.enabled}
+            onChange={e => onMusicWavesChange({ ...musicWavesConfig, enabled: e.target.checked })}
+            style={{ accentColor: '#FFD700' }}
+          />
+        </div>
+        {musicWavesConfig.enabled && (
+          <>
+            <p style={{ fontSize: '10px', color: '#888', margin: '0 0 8px 0' }}>
+              随音乐节奏跳动的地面光轨效果
+            </p>
+            <div style={{ marginTop: '8px' }}>
+              <span style={{ fontSize: '10px', color: '#888' }}>主颜色</span>
+              <ColorPicker
+                value={musicWavesConfig.color || '#FFD700'}
+                onChange={color => onMusicWavesChange({ ...musicWavesConfig, color })}
+              />
+            </div>
+            <div style={{ marginTop: '8px' }}>
+              <span style={{ fontSize: '10px', color: '#888' }}>次要颜色</span>
+              <ColorPicker
+                value={musicWavesConfig.secondaryColor || '#FFFFFF'}
+                onChange={color => onMusicWavesChange({ ...musicWavesConfig, secondaryColor: color })}
+              />
+            </div>
+            <div style={{ ...labelStyle, marginTop: '8px' }}>
+              <span>线条数量: {musicWavesConfig.lineCount}</span>
+            </div>
+            <input
+              type="range"
+              min="1"
+              max="6"
+              value={musicWavesConfig.lineCount}
+              onChange={e => onMusicWavesChange({ ...musicWavesConfig, lineCount: Number(e.target.value) })}
+              style={sliderStyle}
+            />
+            <div style={{ ...labelStyle, marginTop: '8px' }}>
+              <span>基础半径: {musicWavesConfig.radius}</span>
+            </div>
+            <input
+              type="range"
+              min="8"
+              max="20"
+              step="0.5"
+              value={musicWavesConfig.radius}
+              onChange={e => onMusicWavesChange({ ...musicWavesConfig, radius: Number(e.target.value) })}
+              style={sliderStyle}
+            />
+            <div style={{ ...labelStyle, marginTop: '8px' }}>
+              <span>线宽: {musicWavesConfig.width.toFixed(3)}</span>
+            </div>
+            <input
+              type="range"
+              min="0.03"
+              max="0.15"
+              step="0.01"
+              value={musicWavesConfig.width}
+              onChange={e => onMusicWavesChange({ ...musicWavesConfig, width: Number(e.target.value) })}
+              style={sliderStyle}
+            />
+            <div style={{ ...labelStyle, marginTop: '8px' }}>
+              <span>基础振幅: {musicWavesConfig.baseAmplitude.toFixed(2)}</span>
+            </div>
+            <input
+              type="range"
+              min="0.1"
+              max="0.5"
+              step="0.05"
+              value={musicWavesConfig.baseAmplitude}
+              onChange={e => onMusicWavesChange({ ...musicWavesConfig, baseAmplitude: Number(e.target.value) })}
+              style={sliderStyle}
+            />
+            <div style={{ ...labelStyle, marginTop: '8px' }}>
+              <span>音乐响应强度: {musicWavesConfig.musicStrength.toFixed(1)}x</span>
+            </div>
+            <input
+              type="range"
+              min="0.5"
+              max="2"
+              step="0.1"
+              value={musicWavesConfig.musicStrength}
+              onChange={e => onMusicWavesChange({ ...musicWavesConfig, musicStrength: Number(e.target.value) })}
+              style={sliderStyle}
+            />
+            <div style={{ ...labelStyle, marginTop: '8px' }}>
+              <span>流动速度: {musicWavesConfig.speed.toFixed(1)}x</span>
+            </div>
+            <input
+              type="range"
+              min="0.5"
+              max="2"
+              step="0.1"
+              value={musicWavesConfig.speed}
+              onChange={e => onMusicWavesChange({ ...musicWavesConfig, speed: Number(e.target.value) })}
               style={sliderStyle}
             />
           </>

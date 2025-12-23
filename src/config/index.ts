@@ -34,7 +34,7 @@ export const CONFIG = {
 
 // ============ 视觉增强默认配置 ============
 
-import type { BellConfig, ShootingStarsConfig, AuroraConfig, FireworksConfig } from '../types';
+import type { BellConfig, ShootingStarsConfig, AuroraConfig, FireworksConfig, MusicWavesConfig } from '../types';
 
 // 3D 铃铛装饰默认配置
 export const DEFAULT_BELL_CONFIG: BellConfig = {
@@ -75,6 +75,19 @@ export const DEFAULT_FIREWORKS_CONFIG: FireworksConfig = {
   fadeSpeed: 1,
   maxConcurrent: 3,
   triggerGesture: undefined
+};
+
+// 音乐波浪线（地面光轨）默认配置
+export const DEFAULT_MUSIC_WAVES_CONFIG: MusicWavesConfig = {
+  enabled: false,
+  color: '#FFD700',
+  secondaryColor: '#FFFFFF',
+  lineCount: 3,
+  radius: 14,
+  width: 0.08,
+  baseAmplitude: 0.25,
+  musicStrength: 1.0,
+  speed: 1.0
 };
 
 // 圣诞音乐 URL

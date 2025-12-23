@@ -23,7 +23,8 @@ import {
   ShootingStars,
   Aurora,
   Fireworks,
-  GiftBox
+  GiftBox,
+  MusicWaves
 } from './three';
 import { HeartParticles } from '../HeartParticles';
 import { TextParticles } from '../TextParticles';
@@ -61,6 +62,7 @@ interface ExperienceProps {
   isGiftOpen?: boolean;
   onGiftOpen?: () => void;
   onAssetsLoaded?: () => void;
+  audioLevelRef?: React.MutableRefObject<number | undefined>;
 }
 
 // 使用 memo 封装，仅在关键 props 变化时重渲染
@@ -92,7 +94,8 @@ export const Experience = memo(({
   isGiftWaiting = false,
   isGiftOpen = false,
   onGiftOpen,
-  onAssetsLoaded
+  onAssetsLoaded,
+  audioLevelRef
 }: ExperienceProps) => {
   const controlsRef = useRef<any>(null);
   const { active, total } = useProgress();
@@ -331,6 +334,14 @@ export const Experience = memo(({
               size={config.fog?.size}
               spread={config.fog?.spread}
               height={config.fog?.height}
+            />
+          )}
+          {config.musicWaves?.enabled && (
+            <MusicWaves
+              config={config.musicWaves}
+              state={sceneState}
+              treeHeight={config.treeShape?.height}
+              audioLevelRef={audioLevelRef}
             />
           )}
           {safeConfig.foliage.enabled && (

@@ -2323,10 +2323,12 @@ export const SettingsPanel = ({
         shootingStars={config.shootingStars}
         aurora={config.aurora}
         fireworks={config.fireworks}
+        musicWaves={config.musicWaves}
         onBellsChange={(bells) => onChange({ ...config, bells })}
         onShootingStarsChange={(shootingStars) => onChange({ ...config, shootingStars })}
         onAuroraChange={(aurora) => onChange({ ...config, aurora })}
         onFireworksChange={(fireworks) => onChange({ ...config, fireworks })}
+        onMusicWavesChange={(musicWaves) => onChange({ ...config, musicWaves })}
       />
 
       {/* 树顶星星/头像 */}

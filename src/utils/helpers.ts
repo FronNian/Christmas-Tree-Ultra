@@ -554,6 +554,18 @@ export const getDefaultSceneConfig = (forceMinimal = false): Record<string, unkn
       textCount: useMinimal ? 500 : 1000,
       heartCount: useMinimal ? 800 : 1500
     },
+    // 音乐波浪线默认关闭（可在设置中开启）
+    musicWaves: {
+      enabled: false,
+      color: '#FFD700',
+      secondaryColor: '#FFFFFF',
+      lineCount: useMinimal ? 1 : 3,
+      radius: useMinimal ? 12 : 14,
+      width: 0.08,
+      baseAmplitude: 0.25,
+      musicStrength: 1.0,
+      speed: 1.0
+    },
     cameraSensitivity: 25, // 默认灵敏度
     zoomSpeed: 100, // 默认放大缩小速度
     topStar: { size: 1.0 } // 树顶星星默认大小（倍数）
