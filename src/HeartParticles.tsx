@@ -393,22 +393,24 @@ const UnifiedPhotoDisplay = ({
   // 环绕参数
   const orbitRadius = isMobileDevice ? 8 : 12;
   const photoSize = isMobileDevice ? 0.7 : 1.0;
-  const orbitDuration = 5000; // 环绕阶段持续5秒
-  const shrinkDuration = 800; // 收缩动画持续时间
+  // 预留参数（未来可能重新启用环绕/收缩阶段）
+  // const orbitDuration = 5000; // 环绕阶段持续5秒
+  // const shrinkDuration = 800; // 收缩动画持续时间
+  const slideDuration = 600; // 单次切换动画时间
   // 轮播阶段的照片缩放（比环绕时大）
   const carouselScale = photoScale * (isMobileDevice ? 1.6 : 2.2);
   
-  // visible 变化时重置状态
+  // visible 变化时重置状态（直接进入轮播阶段，避免等待 orbit 5s）
   useEffect(() => {
     if (visible && !wasVisibleRef.current) {
-      setPhase('orbit');
+      setPhase('carousel');
       phaseTimeRef.current = 0;
       rotationRef.current = 0;
-      shrinkProgressRef.current = 0;
+      shrinkProgressRef.current = 1;
       setCarouselIndex(0);
       setSlideProgress(0);
       setIsSliding(false);
-      lastCarouselSwitchRef.current = 0;
+      lastCarouselSwitchRef.current = Date.now();
     }
     wasVisibleRef.current = visible;
   }, [visible]);
@@ -422,18 +424,12 @@ const UnifiedPhotoDisplay = ({
     if (!paused) {
       phaseTimeRef.current += delta * 1000;
       
-      // 阶段转换逻辑
-      if (phase === 'orbit' && phaseTimeRef.current >= orbitDuration && progress > 0.8) {
-        setPhase('shrinking');
+      // 直接使用轮播阶段，不再经过 orbit/shrinking 过渡
+      if (phase !== 'carousel') {
+        setPhase('carousel');
         phaseTimeRef.current = 0;
-        shrinkProgressRef.current = 0;
-      } else if (phase === 'shrinking') {
-        shrinkProgressRef.current = Math.min(1, phaseTimeRef.current / shrinkDuration);
-        if (shrinkProgressRef.current >= 1) {
-          setPhase('carousel');
-          phaseTimeRef.current = 0;
-          lastCarouselSwitchRef.current = now;
-        }
+        shrinkProgressRef.current = 1;
+        lastCarouselSwitchRef.current = now;
       }
       
       // 环绕阶段持续旋转
@@ -445,7 +441,6 @@ const UnifiedPhotoDisplay = ({
       if (phase === 'carousel' && photos.length > 1) {
         if (isSliding) {
           const elapsed = now - slideStartRef.current;
-          const slideDuration = 600;
           const newProgress = Math.min(1, elapsed / slideDuration);
           const eased = 1 - Math.pow(1 - newProgress, 3);
           setSlideProgress(eased);
@@ -456,9 +451,13 @@ const UnifiedPhotoDisplay = ({
             setCarouselIndex((carouselIndex + 1) % photos.length);
             lastCarouselSwitchRef.current = now;
           }
-        } else if (now - lastCarouselSwitchRef.current >= interval) {
+        } else {
+          // 控制总展示时长≈ interval（包含0.6s切换动画），避免实际比设置值慢
+          const effectiveInterval = Math.max(200, interval - slideDuration);
+          if (now - lastCarouselSwitchRef.current >= effectiveInterval) {
           setIsSliding(true);
           slideStartRef.current = now;
+          }
         }
       }
     }
