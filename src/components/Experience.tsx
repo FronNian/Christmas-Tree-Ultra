@@ -145,6 +145,12 @@ export const Experience = memo(({
     fog: config.fog || { enabled: true, opacity: 0.3, count: 800, size: 0.8, spread: 1, height: 1.5 }
   }), [config]);
 
+  // 爱心相框颜色：优先使用 heartEffect.frameColor，其次回退到照片相框颜色，最后默认白色
+  const heartFrameColor = useReactMemo(
+    () => config.heartEffect?.frameColor ?? config.photoOrnaments?.frameColor ?? '#FFFFFF',
+    [config.heartEffect?.frameColor, config.photoOrnaments?.frameColor]
+  );
+
   useFrame((_, delta) => {
     if (controlsRef.current) {
       const isFormed = sceneState === 'FORMED';
@@ -454,15 +460,15 @@ export const Experience = memo(({
       )}
 
       <HeartParticles 
-        visible={showHeart || false} 
-        color={config.heartEffect?.color || "#FF1493"} 
+        visible={showHeart || false}
+        color={config.heartEffect?.color || '#FF1493'}
         count={mobile ? Math.min(heartCount, 1000) : heartCount}
         size={config.heartEffect?.size}
         centerPhoto={heartCenterPhoto}
         centerPhotos={heartCenterPhotos}
         photoInterval={heartPhotoInterval}
         photoScale={config.heartEffect?.photoScale || 1}
-        frameColor={config.heartEffect?.frameColor || '#FFFFFF'}
+        frameColor={heartFrameColor}
         glowTrail={{
           enabled: config.heartEffect?.glowTrail?.enabled ?? true,
           color: config.heartEffect?.glowTrail?.color || config.heartEffect?.color || '#FF1493',
