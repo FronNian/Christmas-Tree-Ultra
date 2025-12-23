@@ -1,157 +1,12 @@
-import { useRef, useMemo, useEffect } from 'react';
+
+import { useRef, useMemo, useEffect, memo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { CONFIG } from '../../config';
 import type { SceneState, AnimationEasing, ScatterShape, GatherShape, DecorationColors, DecorationTypes, DecorationTwinkle, DecorationStyleConfig } from '../../types';
 import { getGeometriesForStyle } from './DecorationGeometries';
 
-// 缓动函数
-const easingFunctions: Record<AnimationEasing, (t: number) => number> = {
-  linear: (t) => t,
-  easeIn: (t) => t * t * t,
-  easeOut: (t) => 1 - Math.pow(1 - t, 3),
-  easeInOut: (t) => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2,
-  bounce: (t) => {
-    const n1 = 7.5625, d1 = 2.75;
-    if (t < 1 / d1) return n1 * t * t;
-    if (t < 2 / d1) { t -= 1.5 / d1; return n1 * t * t + 0.75; }
-    if (t < 2.5 / d1) { t -= 2.25 / d1; return n1 * t * t + 0.9375; }
-    t -= 2.625 / d1; return n1 * t * t + 0.984375;
-  },
-  elastic: (t) => {
-    if (t === 0 || t === 1) return t;
-    return Math.pow(2, -10 * t) * Math.sin((t * 10 - 0.75) * (2 * Math.PI / 3)) + 1;
-  }
-};
-
-// 根据索引和形状生成确定性的散开位置（使用种子随机）
-const seededRandom = (seed: number) => {
-  const x = Math.sin(seed * 12.9898 + seed * 78.233) * 43758.5453;
-  return x - Math.floor(x);
-};
-
-// 根据散开形状和索引生成位置（确定性，同一索引同一形状总是相同位置）
-const generateScatterPosition = (shape: ScatterShape, index: number): THREE.Vector3 => {
-  const r1 = seededRandom(index * 3 + 1);
-  const r2 = seededRandom(index * 3 + 2);
-  const r3 = seededRandom(index * 3 + 3);
-  
-  switch (shape) {
-    case 'explosion': {
-      const theta = r1 * Math.PI * 2;
-      const phi = Math.acos(2 * r2 - 1);
-      const r = 20 + r3 * 25;
-      return new THREE.Vector3(
-        r * Math.sin(phi) * Math.cos(theta),
-        r * Math.sin(phi) * Math.sin(theta),
-        r * Math.cos(phi)
-      );
-    }
-    case 'spiral': {
-      const t = r1;
-      const angle = t * Math.PI * 12;
-      const radius = 8 + t * 25 + r2 * 5;
-      const y = -20 + t * 50 + (r3 - 0.5) * 8;
-      return new THREE.Vector3(radius * Math.cos(angle), y, radius * Math.sin(angle));
-    }
-    case 'rain': {
-      return new THREE.Vector3(
-        (r1 - 0.5) * 60,
-        25 + r2 * 35,
-        (r3 - 0.5) * 60
-      );
-    }
-    case 'ring': {
-      const angle = r1 * Math.PI * 2;
-      const radius = 22 + r2 * 10;
-      const y = (r3 - 0.5) * 15;
-      return new THREE.Vector3(radius * Math.cos(angle), y, radius * Math.sin(angle));
-    }
-    case 'sphere':
-    default: {
-      // 均匀球形分布
-      const theta = r1 * Math.PI * 2;
-      const phi = Math.acos(2 * r2 - 1);
-      const r = Math.cbrt(r3) * 30;
-      return new THREE.Vector3(
-        r * Math.sin(phi) * Math.cos(theta),
-        r * Math.cos(phi),
-        r * Math.sin(phi) * Math.sin(theta)
-      );
-    }
-  }
-};
-
-// 生成目标位置（树上的位置，支持自定义尺寸）
-const generateTargetPosition = (index: number, h: number, rBase: number): THREE.Vector3 => {
-  const r1 = seededRandom(index * 7 + 100);
-  const r2 = seededRandom(index * 7 + 101);
-  const y = (r1 * h) - (h / 2);
-  const currentRadius = (rBase * (1 - (y + (h / 2)) / h)) * 0.95;
-  const theta = r2 * Math.PI * 2;
-  return new THREE.Vector3(currentRadius * Math.cos(theta), y, currentRadius * Math.sin(theta));
-};
-
-// 根据聚合形状计算延迟（0-1范围，值越大越晚开始动画，支持自定义尺寸）
-const calculateGatherDelay = (targetPos: THREE.Vector3, shape: GatherShape, h: number, rBase: number): number => {
-  const normalizedY = (targetPos.y + h / 2) / h; // 0=底部, 1=顶部
-  const normalizedX = (targetPos.x + rBase) / (2 * rBase);
-  const dist = Math.sqrt(targetPos.x * targetPos.x + targetPos.z * targetPos.z) / rBase;
-  const angle = Math.atan2(targetPos.z, targetPos.x);
-  
-  switch (shape) {
-    case 'stack': 
-      // 搭积木：底部先到位，顶部最后
-      return normalizedY * 0.85;
-    case 'spiralIn': {
-      // 螺旋聚合：像盘山公路一样排队进入
-      const spiralTurns = 5;
-      const normalizedAngle = (angle + Math.PI) / (2 * Math.PI);
-      const currentTurn = normalizedY * spiralTurns;
-      const positionOnSpiral = (currentTurn + normalizedAngle) / (spiralTurns + 1);
-      return Math.min(0.9, positionOnSpiral * 0.95);
-    }
-    case 'implode': 
-      // 向心收缩：外围先动，中心最后
-      return (1 - Math.min(1, dist)) * 0.8;
-    case 'waterfall': 
-      // 瀑布：顶部先到位，底部最后
-      return (1 - normalizedY) * 0.85;
-    case 'wave': 
-      // 波浪：从左到右扫过
-      return normalizedX * 0.85;
-    case 'direct':
-    default: 
-      return 0;
-  }
-};
-
-// 默认装饰颜色
-const DEFAULT_COLORS: DecorationColors = {
-  primary: '#D32F2F',   // 红色
-  secondary: '#FFD700', // 金色
-  accent: '#1976D2',    // 蓝色
-  candy1: '#FF0000',    // 糖果红
-  candy2: '#FFFFFF'     // 糖果白
-};
-
-// 默认装饰类型（全部启用）
-const DEFAULT_TYPES: DecorationTypes = {
-  box: true,
-  sphere: true,
-  cylinder: true
-};
-
-// 默认样式配置
-const DEFAULT_STYLE_CONFIG: DecorationStyleConfig = {
-  style: 'classic',
-  material: 'standard',
-  transparency: 0,
-  metalness: 0.4,
-  roughness: 0.3,
-  emissiveIntensity: 0.2
-};
-
+// Added missing interface definition
 interface ChristmasElementsProps {
   state: SceneState;
   customImages?: {
@@ -172,9 +27,90 @@ interface ChristmasElementsProps {
   treeRadius?: number;
 }
 
+const easingFunctions: Record<AnimationEasing, (t: number) => number> = {
+  linear: (t) => t,
+  easeIn: (t) => t * t * t,
+  easeOut: (t) => 1 - Math.pow(1 - t, 3),
+  easeInOut: (t) => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2,
+  bounce: (t) => {
+    const n1 = 7.5625, d1 = 2.75;
+    if (t < 1 / d1) return n1 * t * t;
+    if (t < 2 / d1) { t -= 1.5 / d1; return n1 * t * t + 0.75; }
+    if (t < 2.5 / d1) { t -= 2.25 / d1; return n1 * t * t + 0.9375; }
+    t -= 2.625 / d1; return n1 * t * t + 0.984375;
+  },
+  elastic: (t) => {
+    if (t === 0 || t === 1) return t;
+    return Math.pow(2, -10 * t) * Math.sin((t * 10 - 0.75) * (2 * Math.PI / 3)) + 1;
+  }
+};
 
+const seededRandom = (seed: number) => {
+  const x = Math.sin(seed * 12.9898 + seed * 78.233) * 43758.5453;
+  return x - Math.floor(x);
+};
 
-export const ChristmasElements = ({ 
+const generateScatterPosition = (shape: ScatterShape, index: number): THREE.Vector3 => {
+  const r1 = seededRandom(index * 3 + 1);
+  const r2 = seededRandom(index * 3 + 2);
+  const r3 = seededRandom(index * 3 + 3);
+  if (shape === 'explosion') {
+    const theta = r1 * Math.PI * 2;
+    const phi = Math.acos(2 * r2 - 1);
+    const r = 20 + r3 * 25;
+    return new THREE.Vector3(r * Math.sin(phi) * Math.cos(theta), r * Math.sin(phi) * Math.sin(theta), r * Math.cos(phi));
+  } else if (shape === 'spiral') {
+    const t = r1;
+    const angle = t * Math.PI * 12;
+    const radius = 8 + t * 25 + r2 * 5;
+    const y = -20 + t * 50 + (r3 - 0.5) * 8;
+    return new THREE.Vector3(radius * Math.cos(angle), y, radius * Math.sin(angle));
+  } else if (shape === 'rain') {
+    return new THREE.Vector3((r1 - 0.5) * 60, 25 + r2 * 35, (r3 - 0.5) * 60);
+  } else if (shape === 'ring') {
+    const angle = r1 * Math.PI * 2;
+    const radius = 22 + r2 * 10;
+    const y = (r3 - 0.5) * 15;
+    return new THREE.Vector3(radius * Math.cos(angle), y, radius * Math.sin(angle));
+  } else {
+    const theta = r1 * Math.PI * 2;
+    const phi = Math.acos(2 * r2 - 1);
+    const r = Math.cbrt(r3) * 30;
+    return new THREE.Vector3(r * Math.sin(phi) * Math.cos(theta), r * Math.cos(phi), r * Math.sin(phi) * Math.sin(theta));
+  }
+};
+
+const generateTargetPosition = (index: number, h: number, rBase: number): THREE.Vector3 => {
+  const r1 = seededRandom(index * 7 + 100);
+  const r2 = seededRandom(index * 7 + 101);
+  const y = (r1 * h) - (h / 2);
+  const currentRadius = (rBase * (1 - (y + (h / 2)) / h)) * 0.95;
+  const theta = r2 * Math.PI * 2;
+  return new THREE.Vector3(currentRadius * Math.cos(theta), y, currentRadius * Math.sin(theta));
+};
+
+const calculateGatherDelay = (targetPos: THREE.Vector3, shape: GatherShape, h: number, rBase: number): number => {
+  const normalizedY = (targetPos.y + h / 2) / h;
+  const normalizedX = (targetPos.x + rBase) / (2 * rBase);
+  const dist = Math.sqrt(targetPos.x * targetPos.x + targetPos.z * targetPos.z) / rBase;
+  const angle = Math.atan2(targetPos.z, targetPos.x);
+  if (shape === 'stack') return normalizedY * 0.85;
+  if (shape === 'spiralIn') {
+    const normalizedAngle = (angle + Math.PI) / (2 * Math.PI);
+    const positionOnSpiral = (normalizedY * 5 + normalizedAngle) / 6;
+    return Math.min(0.9, positionOnSpiral * 0.95);
+  }
+  if (shape === 'implode') return (1 - Math.min(1, dist)) * 0.8;
+  if (shape === 'waterfall') return (1 - normalizedY) * 0.85;
+  if (shape === 'wave') return normalizedX * 0.85;
+  return 0;
+};
+
+const DEFAULT_COLORS: DecorationColors = { primary: '#D32F2F', secondary: '#FFD700', accent: '#1976D2', candy1: '#FF0000', candy2: '#FFFFFF' };
+const DEFAULT_TYPES: DecorationTypes = { box: true, sphere: true, cylinder: true };
+const DEFAULT_STYLE_CONFIG: DecorationStyleConfig = { style: 'classic', material: 'standard', transparency: 0, metalness: 0.4, roughness: 0.3, emissiveIntensity: 0.2 };
+
+export const ChristmasElements = memo(({ 
   state, 
   customImages,
   customColors,
@@ -189,97 +125,46 @@ export const ChristmasElements = ({
   treeHeight,
   treeRadius
 }: ChristmasElementsProps) => {
-  // 闪烁配置：默认启用，速度1
   const twinkleEnabled = twinkle?.enabled ?? true;
   const twinkleSpeed = twinkle?.speed ?? 1;
-  const twinkleFlashColor = twinkle?.flashColor ?? '#FFFFFF';  // 闪烁颜色，默认白色
-  const twinkleBaseColor = twinkle?.baseColor;  // 基础发光颜色，默认使用装饰本身颜色
+  const twinkleFlashColor = twinkle?.flashColor ?? '#FFFFFF';
+  const twinkleBaseColor = twinkle?.baseColor;
   const actualHeight = treeHeight ?? CONFIG.tree.height;
   const actualRadius = treeRadius ?? CONFIG.tree.radius;
   
-  // 合并样式配置
-  const finalStyleConfig = useMemo(() => ({
-    ...DEFAULT_STYLE_CONFIG,
-    ...styleConfig
-  }), [styleConfig]);
-  
-  // 合并装饰类型配置
-  const types = useMemo(() => ({
-    ...DEFAULT_TYPES,
-    ...decorationTypes
-  }), [decorationTypes]);
-  
-  // 根据样式获取几何体
-  const styleGeometries = useMemo(() => {
-    return getGeometriesForStyle(finalStyleConfig.style);
-  }, [finalStyleConfig.style]);
-  
-  // 获取启用的装饰类型列表 (0=type1, 1=type2, 2=type3)
+  const finalStyleConfig = useMemo(() => ({ ...DEFAULT_STYLE_CONFIG, ...styleConfig }), [styleConfig]);
+  const types = useMemo(() => ({ ...DEFAULT_TYPES, ...decorationTypes }), [decorationTypes]);
+  const styleGeometries = useMemo(() => getGeometriesForStyle(finalStyleConfig.style), [finalStyleConfig.style]);
   const enabledTypes = useMemo(() => {
     const result: number[] = [];
     if (types.box) result.push(0);
     if (types.sphere) result.push(1);
     if (types.cylinder) result.push(2);
-    // 如果全部关闭，默认启用第一种
-    if (result.length === 0) result.push(0);
-    return result;
+    return result.length === 0 ? [0] : result;
   }, [types]);
   
-  // 合并自定义颜色
-  const colors = useMemo(() => ({
-    ...DEFAULT_COLORS,
-    ...customColors
-  }), [customColors]);
-  
-  // 装饰颜色数组（用于随机选择）
-  const decorationColors = useMemo(() => [
-    colors.primary,
-    colors.secondary,
-    colors.accent
-  ], [colors]);
+  const colors = useMemo(() => ({ ...DEFAULT_COLORS, ...customColors }), [customColors]);
+  const decorationColors = useMemo(() => [colors.primary, colors.secondary, colors.accent], [colors]);
   const groupRef = useRef<THREE.Group>(null);
   const progressRef = useRef(0);
-  
-  // 存储当前动画中的 chaos 位置（用于平滑过渡散开形状）
   const currentChaosRef = useRef<THREE.Vector3[]>([]);
   const targetChaosRef = useRef<THREE.Vector3[]>([]);
-  const chaosTransitionRef = useRef(1); // 0-1，chaos 位置过渡进度
+  const chaosTransitionRef = useRef(1);
   const prevScatterShapeRef = useRef(scatterShape);
 
-  // 加载自定义图片纹理
   const textures = useMemo(() => {
     const result: { box?: THREE.Texture; sphere?: THREE.Texture; cylinder?: THREE.Texture } = {};
-    
-    if (customImages?.box) {
-      const tex = new THREE.TextureLoader().load(customImages.box);
-      tex.colorSpace = THREE.SRGBColorSpace;
-      result.box = tex;
-    }
-    if (customImages?.sphere) {
-      const tex = new THREE.TextureLoader().load(customImages.sphere);
-      tex.colorSpace = THREE.SRGBColorSpace;
-      result.sphere = tex;
-    }
-    if (customImages?.cylinder) {
-      const tex = new THREE.TextureLoader().load(customImages.cylinder);
-      tex.colorSpace = THREE.SRGBColorSpace;
-      result.cylinder = tex;
-    }
-    
+    const loader = new THREE.TextureLoader();
+    if (customImages?.box) { result.box = loader.load(customImages.box); result.box.colorSpace = THREE.SRGBColorSpace; }
+    if (customImages?.sphere) { result.sphere = loader.load(customImages.sphere); result.sphere.colorSpace = THREE.SRGBColorSpace; }
+    if (customImages?.cylinder) { result.cylinder = loader.load(customImages.cylinder); result.cylinder.colorSpace = THREE.SRGBColorSpace; }
     return result;
-  }, [customImages?.box, customImages?.sphere, customImages?.cylinder]);
+  }, [customImages]);
 
-  // 使用样式几何体（不再使用固定的 box/sphere/cane）
-  const geometry0 = styleGeometries[0];
-  const geometry1 = styleGeometries[1];
-  const geometry2 = styleGeometries[2];
-
-  // 基础数据（不依赖 scatterShape，只在 count 或 gatherShape 或 colors 或尺寸或类型变化时重新生成）
   const data = useMemo(() => {
     return new Array(count).fill(0).map((_, i) => {
       const targetPos = generateTargetPosition(i, actualHeight, actualRadius);
       const gatherDelay = calculateGatherDelay(targetPos, gatherShape, actualHeight, actualRadius);
-
       const r1 = seededRandom(i * 5 + 200);
       const r2 = seededRandom(i * 5 + 201);
       const r3 = seededRandom(i * 5 + 202);
@@ -287,57 +172,19 @@ export const ChristmasElements = ({
       const r5 = seededRandom(i * 5 + 204);
       const r6 = seededRandom(i * 5 + 205);
       const r7 = seededRandom(i * 5 + 206);
-
-      // 从启用的类型中选择（根据原始随机值映射到启用的类型）
-      const typeIndex = Math.floor(r1 * enabledTypes.length);
-      const type = enabledTypes[typeIndex];
-      
-      let color;
-      let scale = 1;
-      if (type === 0) {
-        // 方块使用自定义颜色
-        color = decorationColors[Math.floor(r2 * decorationColors.length)];
-        scale = 0.8 + r3 * 0.4;
-      } else if (type === 1) {
-        // 球体使用自定义颜色
-        color = decorationColors[Math.floor(r2 * decorationColors.length)];
-        scale = 0.6 + r3 * 0.4;
-      } else {
-        // 糖果棒使用自定义糖果颜色
-        color = r2 > 0.5 ? colors.candy1 : colors.candy2;
-        scale = 0.7 + r3 * 0.3;
-      }
-
-      const rotationSpeed = {
-        x: (r3 - 0.5) * 2.0,
-        y: (r4 - 0.5) * 2.0,
-        z: (r5 - 0.5) * 2.0
-      };
-      
-      // 闪烁参数：飞机灯效果 - 大部分时间暗，突然闪一下
-      const twinkleInterval = 1.5 + r6 * 2.5; // 闪烁间隔 1.5-4秒
-      const twinklePhase = r7 * 10; // 随机相位偏移（秒），让闪烁不同步
-      const twinkleIntensity = 0.8 + r6 * 0.4; // 闪烁时的亮度 0.8-1.2
-      
+      const type = enabledTypes[Math.floor(r1 * enabledTypes.length)];
       return {
-        type,
-        targetPos,
-        color,
-        scale,
-        gatherDelay,
+        type, targetPos, gatherDelay, scale: type === 0 ? 0.8 + r3 * 0.4 : type === 1 ? 0.6 + r3 * 0.4 : 0.7 + r3 * 0.3,
+        color: type === 2 ? (r2 > 0.5 ? colors.candy1 : colors.candy2) : decorationColors[Math.floor(r2 * decorationColors.length)],
+        rotationSpeed: { x: (r3 - 0.5) * 2.0, y: (r4 - 0.5) * 2.0, z: (r5 - 0.5) * 2.0 },
         chaosRotation: new THREE.Euler(r3 * Math.PI, r4 * Math.PI, r5 * Math.PI),
-        rotationSpeed,
-        twinkleInterval,
-        twinklePhase,
-        twinkleIntensity
+        twinkleInterval: 1.5 + r6 * 2.5, twinklePhase: r7 * 10, twinkleIntensity: 0.8 + r6 * 0.4
       };
     });
   }, [count, gatherShape, decorationColors, colors, actualHeight, actualRadius, enabledTypes]);
   
-  // 时间累计（用于闪烁动画）
   const timeRef = useRef(0);
 
-  // 初始化 chaos 位置
   useEffect(() => {
     if (currentChaosRef.current.length !== count) {
       currentChaosRef.current = data.map((_, i) => generateScatterPosition(scatterShape, i));
@@ -346,234 +193,74 @@ export const ChristmasElements = ({
     }
   }, [count, data, scatterShape]);
 
-  // 当 scatterShape 改变时，设置新的目标 chaos 位置
   useEffect(() => {
     if (prevScatterShapeRef.current !== scatterShape) {
-      // 将当前位置保存为起点
       currentChaosRef.current = currentChaosRef.current.map((pos, i) => {
         const newPos = pos.clone();
-        // 如果正在过渡中，使用插值后的位置
-        if (chaosTransitionRef.current < 1) {
-          newPos.lerp(targetChaosRef.current[i], chaosTransitionRef.current);
-        }
+        if (chaosTransitionRef.current < 1) newPos.lerp(targetChaosRef.current[i], chaosTransitionRef.current);
         return newPos;
       });
-      // 设置新的目标位置
       targetChaosRef.current = data.map((_, i) => generateScatterPosition(scatterShape, i));
       chaosTransitionRef.current = 0;
       prevScatterShapeRef.current = scatterShape;
     }
   }, [scatterShape, data]);
 
-  // 动画持续时间（秒），speed 越大越快：0.3x -> 3.3秒, 1x -> 1秒, 3x -> 0.33秒
   const duration = 1 / Math.max(0.3, Math.min(3, speed));
   const easeFn = easingFunctions[easing] || easingFunctions.easeInOut;
 
   useFrame((_, delta) => {
     if (!groupRef.current) return;
-    
-    // 更新时间
     timeRef.current += delta;
     const time = timeRef.current;
-    
-    const isFormed = state === 'FORMED';
-    const targetProgress = isFormed ? 1 : 0;
-    
-    // 线性插值进度，基于持续时间
+    const targetProgress = state === 'FORMED' ? 1 : 0;
     const step = delta / duration;
-    if (targetProgress > progressRef.current) {
-      progressRef.current = Math.min(targetProgress, progressRef.current + step);
-    } else if (targetProgress < progressRef.current) {
-      progressRef.current = Math.max(targetProgress, progressRef.current - step);
-    }
+    if (targetProgress > progressRef.current) progressRef.current = Math.min(targetProgress, progressRef.current + step);
+    else if (targetProgress < progressRef.current) progressRef.current = Math.max(targetProgress, progressRef.current - step);
     const rawT = progressRef.current;
-    
-    // 更新 chaos 位置过渡（散开形状切换时的平滑过渡）
-    if (chaosTransitionRef.current < 1) {
-      chaosTransitionRef.current = Math.min(1, chaosTransitionRef.current + step);
-    }
+    if (chaosTransitionRef.current < 1) chaosTransitionRef.current = Math.min(1, chaosTransitionRef.current + step);
     
     groupRef.current.children.forEach((child, i) => {
       const objData = data[i];
       if (!objData) return;
-      
-      // 计算当前的 chaos 位置（考虑散开形状切换的过渡）
-      const currentChaos = currentChaosRef.current[i];
-      const targetChaos = targetChaosRef.current[i];
-      
-      // 安全检查：如果 chaos 位置未初始化，跳过
-      if (!currentChaos || !targetChaos) return;
-      
-      const chaosT = easeFn(chaosTransitionRef.current);
-      const animatedChaosPos = currentChaos.clone().lerp(targetChaos, chaosT);
-      
-      // 基于延迟的进度计算：delay 越大，开始动画越晚
+      const animatedChaosPos = currentChaosRef.current[i].clone().lerp(targetChaosRef.current[i], easeFn(chaosTransitionRef.current));
       const delay = objData.gatherDelay;
-      let elementT: number;
-      if (delay === 0) {
-        elementT = easeFn(rawT);
-      } else {
-        // 当 rawT < delay 时，adjustedT = 0（还没开始）
-        // 当 rawT >= delay 时，adjustedT 从 0 线性增长到 1
-        const adjustedT = Math.max(0, Math.min(1, (rawT - delay) / (1 - delay)));
-        elementT = easeFn(adjustedT);
-      }
-      
-      // 使用缓动函数插值位置（从动画中的 chaos 位置到目标位置）
+      const elementT = delay === 0 ? easeFn(rawT) : easeFn(Math.max(0, Math.min(1, (rawT - delay) / (1 - delay))));
       child.position.lerpVectors(animatedChaosPos, objData.targetPos, elementT);
       
-      // 计算闪烁：使用自定义闪烁颜色的飞机灯效果
       let flashIntensity = 0;
       let isFlashingNow = false;
       if (twinkleEnabled) {
-        // 根据速度调整闪烁间隔：速度越快，间隔越短
-        const adjustedInterval = objData.twinkleInterval / twinkleSpeed;
-        // 使用 fmod 计算当前在闪烁周期中的位置
-        const cycleTime = (time + objData.twinklePhase) % adjustedInterval;
-        // 闪烁持续时间稍长（0.15秒），让白光更明显
-        const flashDuration = 0.15;
-        const isFlashing = cycleTime < flashDuration;
-        // 闪烁时快速亮起然后衰减
-        const flashProgress = isFlashing ? cycleTime / flashDuration : 0;
-        // 使用更强的闪烁效果
-        flashIntensity = isFlashing 
-          ? Math.pow(1 - flashProgress, 0.3) * objData.twinkleIntensity * 2.5
-          : 0;
-        isFlashingNow = isFlashing;
+        const cycleTime = (time + objData.twinklePhase) % (objData.twinkleInterval / twinkleSpeed);
+        isFlashingNow = cycleTime < 0.15;
+        flashIntensity = isFlashingNow ? Math.pow(1 - cycleTime / 0.15, 0.3) * objData.twinkleIntensity * 2.5 : 0;
       }
       
-      // 如果是精灵（图片），让它面向相机并更新闪烁
-      if (child instanceof THREE.Sprite) {
-        // Sprite 自动面向相机
-        const spriteMat = child.material as THREE.SpriteMaterial;
-        // 基础透明度 + 闪烁时的额外亮度
-        spriteMat.opacity = 0.85 + flashIntensity * 0.15;
-      } else {
-        // 普通 mesh 继续旋转
+      if (!(child instanceof THREE.Sprite)) {
         child.rotation.x += delta * objData.rotationSpeed.x * 0.5;
         child.rotation.y += delta * objData.rotationSpeed.y * 0.5;
         child.rotation.z += delta * objData.rotationSpeed.z * 0.5;
-        
-        // 更新闪烁发光效果
-        const mesh = child as THREE.Mesh;
-        const mat = mesh.material as THREE.MeshStandardMaterial;
-        if (mat && mat.emissiveIntensity !== undefined) {
-          // 基础发光 + 闪烁时大幅提亮
-          const baseEmissive = finalStyleConfig.emissiveIntensity;
-          mat.emissiveIntensity = baseEmissive + flashIntensity * 1.5;
-          
-          // 确定基础颜色（未闪烁时的颜色）
-          const baseEmissiveColor = twinkleBaseColor 
-            ? new THREE.Color(twinkleBaseColor) 
-            : new THREE.Color(objData.color);
-          
-          // 闪烁时直接向自定义闪烁颜色过渡，否则使用基础颜色
-          if (isFlashingNow) {
-            const flashColor = new THREE.Color(twinkleFlashColor);
-            // 0.0 ~ 1.0，越接近 1 越靠近闪烁颜色
-            const mix = Math.min(1, 0.2 + flashIntensity * 0.4);
-            mat.emissive.copy(baseEmissiveColor.clone().lerp(flashColor, mix));
-          } else {
-            mat.emissive.copy(baseEmissiveColor);
-          }
+        const mat = (child as THREE.Mesh).material as THREE.MeshStandardMaterial;
+        if (mat) {
+          mat.emissiveIntensity = finalStyleConfig.emissiveIntensity + flashIntensity * 1.5;
+          const baseColor = twinkleBaseColor ? new THREE.Color(twinkleBaseColor) : new THREE.Color(objData.color);
+          mat.emissive.copy(isFlashingNow ? baseColor.lerp(new THREE.Color(twinkleFlashColor), Math.min(1, 0.2 + flashIntensity * 0.4)) : baseColor);
         }
       }
     });
   });
 
-  // 判断某个类型是否使用自定义图片
-  const useCustomImage = (type: number) => {
-    if (type === 0 && textures.box) return true;
-    if (type === 1 && textures.sphere) return true;
-    if (type === 2 && textures.cylinder) return true;
-    return false;
-  };
-
-  const getTexture = (type: number) => {
-    if (type === 0) return textures.box;
-    if (type === 1) return textures.sphere;
-    return textures.cylinder;
-  };
-
-  // 获取初始位置（用于渲染）
-  const getInitialPosition = (index: number) => {
-    if (currentChaosRef.current[index]) {
-      return currentChaosRef.current[index].clone();
-    }
-    return generateScatterPosition(scatterShape, index);
-  };
-
   return (
     <group ref={groupRef}>
       {data.map((obj, i) => {
-        const initialPos = getInitialPosition(i);
-        
-        // 使用自定义图片（仅经典样式支持）
-        if (finalStyleConfig.style === 'classic' && useCustomImage(obj.type)) {
-          const texture = getTexture(obj.type);
-          return (
-            <sprite 
-              key={i} 
-              position={initialPos}
-              scale={[obj.scale * 1.5, obj.scale * 1.5, 1]}
-            >
-              <spriteMaterial 
-                map={texture} 
-                transparent 
-                depthWrite={false}
-                opacity={0.95}
-              />
-            </sprite>
-          );
+        const initialPos = currentChaosRef.current[i] ? currentChaosRef.current[i].clone() : new THREE.Vector3();
+        if (finalStyleConfig.style === 'classic' && ((obj.type === 0 && textures.box) || (obj.type === 1 && textures.sphere) || (obj.type === 2 && textures.cylinder))) {
+          const texture = obj.type === 0 ? textures.box : obj.type === 1 ? textures.sphere : textures.cylinder;
+          return <sprite key={i} position={initialPos} scale={[obj.scale * 1.5, obj.scale * 1.5, 1]}><spriteMaterial map={texture} transparent depthWrite={false} opacity={0.95} /></sprite>;
         }
-        
-        // 使用样式几何体
-        let geometry;
-        if (obj.type === 0) geometry = geometry0;
-        else if (obj.type === 1) geometry = geometry1;
-        else geometry = geometry2;
-        
-        // 根据材质类型创建不同的材质属性
-        const materialProps = {
-          color: obj.color,
-          roughness: finalStyleConfig.roughness,
-          metalness: finalStyleConfig.metalness,
-          emissive: obj.color,
-          emissiveIntensity: finalStyleConfig.emissiveIntensity,
-          transparent: finalStyleConfig.transparency > 0 || finalStyleConfig.material === 'glass',
-          opacity: 1 - finalStyleConfig.transparency,
-          ...(finalStyleConfig.material === 'glass' && {
-            transmission: 0.6,
-            thickness: 0.5,
-            roughness: 0.1,
-            metalness: 0,
-            ior: 1.5
-          }),
-          ...(finalStyleConfig.material === 'metallic' && {
-            metalness: 0.9,
-            roughness: 0.1
-          }),
-          ...(finalStyleConfig.material === 'emissive' && {
-            emissiveIntensity: finalStyleConfig.emissiveIntensity * 2
-          })
-        };
-        
-        return (
-          <mesh 
-            key={i} 
-            position={initialPos}
-            scale={[obj.scale, obj.scale, obj.scale]} 
-            geometry={geometry} 
-            rotation={obj.chaosRotation}
-          >
-            {finalStyleConfig.material === 'glass' ? (
-              <meshPhysicalMaterial {...materialProps} />
-            ) : (
-              <meshStandardMaterial {...materialProps} />
-            )}
-          </mesh>
-        );
+        const materialProps = { color: obj.color, roughness: finalStyleConfig.roughness, metalness: finalStyleConfig.metalness, emissive: obj.color, emissiveIntensity: finalStyleConfig.emissiveIntensity, transparent: finalStyleConfig.transparency > 0 || finalStyleConfig.material === 'glass', opacity: 1 - finalStyleConfig.transparency };
+        return <mesh key={i} position={initialPos} scale={[obj.scale, obj.scale, obj.scale]} geometry={styleGeometries[obj.type]} rotation={obj.chaosRotation}>{finalStyleConfig.material === 'glass' ? <meshPhysicalMaterial {...materialProps} transmission={0.6} thickness={0.5} /> : <meshStandardMaterial {...materialProps} />}</mesh>;
       })}
     </group>
   );
-};
+});
