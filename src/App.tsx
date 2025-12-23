@@ -434,7 +434,6 @@ export default function GrandTreeApp() {
     // 显示成功提示（如果有成功上传的）
     if (newPhotos.length > 0) {
       setUploadedPhotos(prev => [...prev, ...newPhotos]);
-      setRefreshKey(k => k + 1);
       
       // 如果同时有错误，显示部分成功提示
       if (errors.length > 0) {
@@ -1489,7 +1488,6 @@ export default function GrandTreeApp() {
         photos={uploadedPhotos}
         onChange={(photos) => {
           setUploadedPhotos(photos);
-          setRefreshKey(k => k + 1);
         }}
         isOpen={showPhotoManager}
         onClose={() => setShowPhotoManager(false)}

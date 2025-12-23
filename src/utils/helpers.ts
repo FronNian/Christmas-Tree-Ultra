@@ -297,7 +297,7 @@ export const validateImageFile = (file: File): Promise<{ valid: boolean; error?:
   });
 };
 
-// 图片转 base64（带校验）
+// 图片转 base64（带校验 + 超大图压缩以避免 GPU/内存压力导致的闪烁）
 export const fileToBase64 = async (file: File, skipValidation = false): Promise<string> => {
   // 先校验图片有效性
   if (!skipValidation) {
@@ -307,12 +307,55 @@ export const fileToBase64 = async (file: File, skipValidation = false): Promise<
     }
   }
 
-  return new Promise((resolve, reject) => {
+  // 读取为 DataURL
+  const dataUrl: string = await new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result as string);
     reader.onerror = reject;
     reader.readAsDataURL(file);
   });
+
+  // 对超大分辨率图片进行压缩/降采样，降低 GPU 纹理压力，避免 WebGL 闪烁/上下文丢失
+  const MAX_DIMENSION = 2048; // 单边最大像素
+  const type = file.type;
+
+  // GIF/SVG 保持原始（避免破坏动图或矢量）
+  if (type === 'image/gif' || type === 'image/svg+xml') {
+    return dataUrl;
+  }
+
+  // 创建 Image 以检查尺寸
+  const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = (err) => reject(err);
+    image.src = dataUrl;
+  });
+
+  const { width, height } = img;
+  if (width <= MAX_DIMENSION && height <= MAX_DIMENSION) {
+    return dataUrl; // 尺寸在范围内，直接返回
+  }
+
+  // 计算等比缩放
+  const scale = Math.min(MAX_DIMENSION / width, MAX_DIMENSION / height);
+  const targetW = Math.round(width * scale);
+  const targetH = Math.round(height * scale);
+
+  const canvas = document.createElement('canvas');
+  canvas.width = targetW;
+  canvas.height = targetH;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return dataUrl;
+
+  ctx.drawImage(img, 0, 0, targetW, targetH);
+
+  // JPEG/WebP 使用质量参数压缩，PNG/BMP 仍用原格式
+  const isJpegLike = type === 'image/jpeg' || type === 'image/webp';
+  const mime = isJpegLike ? type : 'image/png';
+  const quality = isJpegLike ? 0.9 : undefined;
+
+  return canvas.toDataURL(mime, quality);
 };
 
 // 检测是否支持全屏

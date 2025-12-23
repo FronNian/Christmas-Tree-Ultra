@@ -120,6 +120,10 @@ export const uploadShare = async (
   message?: string
 ): Promise<{ success: boolean; shareId?: string; editToken?: string; error?: string }> => {
   try {
+    if (!R2_API_URL) {
+      return { success: false, error: '上传服务未配置，请联系管理员（缺少 R2_API_URL）。' };
+    }
+
     const localShare = getLocalShare();
     
     // 如果已有分享，返回错误提示用户使用编辑功能
@@ -169,7 +173,17 @@ export const uploadShare = async (
     });
 
     if (!response.ok) {
-      throw new Error(`上传失败: ${response.status}`);
+      // 400/413 等前端可识别错误，返回用户提示
+      let serverMessage = '';
+      try {
+        serverMessage = await response.text();
+      } catch {
+        // ignore
+      }
+      if (response.status === 400) {
+        return { success: false, error: serverMessage || '上传失败：请求格式或参数错误（400）。' };
+      }
+      throw new Error(`上传失败: ${response.status}${serverMessage ? ` - ${serverMessage}` : ''}`);
     }
 
     // 保存到本地
@@ -204,6 +218,10 @@ export const updateShare = async (
   message?: string
 ): Promise<{ success: boolean; error?: string }> => {
   try {
+    if (!R2_API_URL) {
+      return { success: false, error: '上传服务未配置，请联系管理员（缺少 R2_API_URL）。' };
+    }
+
     // 先获取现有数据验证 token
     const existing = await getShare(shareId);
     if (!existing) {
@@ -245,7 +263,16 @@ export const updateShare = async (
     });
 
     if (!response.ok) {
-      throw new Error(`更新失败: ${response.status}`);
+      let serverMessage = '';
+      try {
+        serverMessage = await response.text();
+      } catch {
+        // ignore
+      }
+      if (response.status === 400) {
+        return { success: false, error: serverMessage || '更新失败：请求格式或参数错误（400）。' };
+      }
+      throw new Error(`更新失败: ${response.status}${serverMessage ? ` - ${serverMessage}` : ''}`);
     }
 
     return { success: true };

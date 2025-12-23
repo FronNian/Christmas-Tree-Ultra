@@ -431,7 +431,11 @@ export const PhotoOrnaments = ({
             position={getInitialPosition(i)}
             scale={[obj.scale, obj.scale, obj.scale]}
             rotation={state === 'CHAOS' ? obj.chaosRotation : [0, 0, 0]}
-            onClick={() => onPhotoClick?.(selectedIndex === i ? null : i)}
+            onClick={() => {
+              // 将父级状态更新延迟到事件循环末尾，避免在渲染阶段触发 setState 警告
+              const nextIndex = selectedIndex === i ? null : i;
+              requestAnimationFrame(() => onPhotoClick?.(nextIndex));
+            }}
           >
             {/* 正面 */}
             <group position={[0, 0, 0.02]}>
