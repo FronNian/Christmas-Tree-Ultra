@@ -2,7 +2,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { Canvas } from '@react-three/fiber';
 import * as THREE from 'three';
-import { Experience, GestureController, SettingsPanel, TitleOverlay, Modal, LyricsDisplay, AvatarCropper, IntroOverlay, WelcomeTutorial, PrivacyNotice, CenterPhoto, photoScreenPositions, GiftStepOverlay, VoicePlayer, KeyboardShortcuts, PhotoManager, LetterStepOverlay } from './components';
+import { Experience, GestureController, SettingsPanel, TitleOverlay, Modal, LyricsDisplay, AvatarCropper, IntroOverlay, WelcomeTutorial, PrivacyNotice, CenterPhoto, GiftStepOverlay, VoicePlayer, KeyboardShortcuts, PhotoManager, LetterStepOverlay } from './components';
 import { CHRISTMAS_MUSIC_URL } from './config';
 import { THEME_PRESETS, type ThemeKey } from './config/themes';
 import { isMobile, isTablet, fileToBase64, getDefaultSceneConfig, toggleFullscreen, isFullscreen, isFullscreenSupported } from './utils/helpers';
@@ -12,7 +12,7 @@ import {
   saveLocalConfig, getLocalConfig, saveLocalPhotos, getLocalPhotos,
   refreshShareExpiry, deleteShare, clearLocalShare
 } from './lib/r2';
-import type { SceneState, SceneConfig, GestureConfig, GestureAction, MusicConfig } from './types';
+import type { SceneState, SceneConfig, GestureConfig, GestureAction, MusicConfig, PhotoScreenPosition } from './types';
 import { PRESET_MUSIC } from './types';
 import { Volume2, VolumeX, Camera, Settings, Wrench, Link, TreePine, Sparkles, Loader, HelpCircle, Shield, Heart, Type, Play, Maximize, Minimize, Keyboard } from 'lucide-react';
 
@@ -137,6 +137,7 @@ export default function GrandTreeApp() {
   const textEffectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const textSwitchTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const photoLockTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null); // 照片锁定计时器
+  const photoScreenPositionsRef = useRef<PhotoScreenPosition[]>([]);
   
   // 配置 refs（避免 useCallback 依赖变化导致重新创建）
   const configuredTextsRef = useRef<string[]>([]);
@@ -627,7 +628,7 @@ export default function GrandTreeApp() {
       let closestIndex = -1;
       let closestDist = Infinity;
 
-      photoScreenPositions.forEach((photoPos) => {
+      photoScreenPositionsRef.current.forEach((photoPos) => {
         if (photoPos) {
           const dx = photoPos.x - _pos.x;
           const dy = photoPos.y - _pos.y;
@@ -1202,6 +1203,9 @@ export default function GrandTreeApp() {
             selectedPhotoIndex={selectedPhotoIndex}
             onPhotoSelect={setSelectedPhotoIndex}
             photoPaths={uploadedPhotos}
+            onPhotoScreenPositions={(positions) => {
+              photoScreenPositionsRef.current = positions;
+            }}
             showHeart={showHeart}
             showText={showText}
             customMessage={(sceneConfig.gestureTexts || [sceneConfig.gestureText || 'MERRY CHRISTMAS'])[currentTextIndex] || 'MERRY CHRISTMAS'}

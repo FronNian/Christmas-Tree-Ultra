@@ -35,6 +35,7 @@ interface ExperienceProps {
   selectedPhotoIndex: number | null;
   onPhotoSelect: (index: number | null) => void;
   photoPaths: string[];
+  onPhotoScreenPositions?: (positions: import('../types').PhotoScreenPosition[]) => void;
   showHeart?: boolean;
   showText?: boolean;
   customMessage?: string;
@@ -69,6 +70,7 @@ export const Experience = memo(({
   selectedPhotoIndex,
   onPhotoSelect,
   photoPaths,
+  onPhotoScreenPositions,
   showHeart,
   showText,
   customMessage,
@@ -346,6 +348,7 @@ export const Experience = memo(({
                 selectedIndex={selectedPhotoIndex}
                 onPhotoClick={onPhotoSelect}
                 photoPaths={photoPaths}
+                onScreenPositionsUpdate={onPhotoScreenPositions}
                 easing={config.animation?.easing}
                 speed={config.animation?.speed}
                 scatterShape={config.animation?.scatterShape}

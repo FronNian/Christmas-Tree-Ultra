@@ -152,6 +152,25 @@ export const GestureController = ({
     let requestRef: number;
     let isActive = true;
 
+    const baseUrl = (import.meta.env.BASE_URL || '/').replace(/\/$/, '');
+    const localWasmRoot = `${baseUrl}/wasm`;
+    const localModelPath = `${baseUrl}/models/hand_landmarker.task`;
+    const cdnWasmRoot = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm';
+
+    const createLandmarker = async (vision: any, delegate: 'GPU' | 'CPU') => {
+      return HandLandmarker.createFromOptions(vision, {
+        baseOptions: {
+          modelAssetPath: localModelPath,
+          delegate
+        },
+        runningMode: 'VIDEO',
+        numHands: 1,
+        minHandDetectionConfidence: 0.5,
+        minHandPresenceConfidence: 0.5,
+        minTrackingConfidence: 0.5
+      });
+    };
+
     const setup = async () => {
       callbacksRef.current.onStatus('LOADING AI...');
 
@@ -167,21 +186,25 @@ export const GestureController = ({
         });
 
         const landmarkerPromise = (async () => {
-          const vision = await FilesetResolver.forVisionTasks(
-            'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm'
-          );
-          
-          return await HandLandmarker.createFromOptions(vision, {
-            baseOptions: {
-              modelAssetPath: '/models/hand_landmarker.task',
-              delegate: 'GPU',
-            },
-            runningMode: 'VIDEO',
-            numHands: 1,
-            minHandDetectionConfidence: 0.5,
-            minHandPresenceConfidence: 0.5,
-            minTrackingConfidence: 0.5,
+          // 先尝试本地资源，失败再回退 CDN，保证离线/内网可用
+          let vision = await FilesetResolver.forVisionTasks(localWasmRoot).catch((err) => {
+            console.warn('Load wasm from local failed, fallback to CDN.', err);
+            callbacksRef.current.onStatus('AI LOADING (CDN fallback)...');
+            return null;
           });
+
+          if (!vision) {
+            vision = await FilesetResolver.forVisionTasks(cdnWasmRoot);
+          }
+
+          // 优先 GPU，失败自动回退 CPU，避免低端或 WebGL 问题导致整体失败
+          try {
+            return await createLandmarker(vision, 'GPU');
+          } catch (gpuErr) {
+            console.warn('GPU delegate failed, fallback to CPU.', gpuErr);
+            callbacksRef.current.onStatus('AI LOADING (CPU fallback)...');
+            return await createLandmarker(vision, 'CPU');
+          }
         })();
 
         const [stream, landmarker] = await Promise.all([
@@ -212,7 +235,13 @@ export const GestureController = ({
         }
       } catch (err: unknown) {
         console.error('AI Setup Error:', err);
-        callbacksRef.current.onStatus('AI ERROR');
+        const errorName = (err as { name?: string })?.name;
+        if (errorName === 'NotAllowedError' || errorName === 'NotReadableError' || errorName === 'NotFoundError') {
+          // 摄像头权限/设备问题，直接提示并停止重试
+          callbacksRef.current.onStatus('AI PERMISSION DENIED');
+        } else {
+          callbacksRef.current.onStatus('AI ERROR');
+        }
       }
     };
 

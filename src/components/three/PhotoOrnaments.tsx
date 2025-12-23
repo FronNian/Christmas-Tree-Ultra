@@ -8,8 +8,6 @@ import { CONFIG } from '../../config';
 import { isMobile } from '../../utils/helpers';
 import type { SceneState, PhotoScreenPosition, AnimationEasing, ScatterShape, GatherShape } from '../../types';
 
-export let photoScreenPositions: PhotoScreenPosition[] = [];
-
 const easingFunctions: Record<AnimationEasing, (t: number) => number> = {
   linear: (t) => t,
   easeIn: (t) => t * t * t,
@@ -111,6 +109,7 @@ interface PhotoOrnamentsProps {
   frameColor?: string;
   treeHeight?: number;
   treeRadius?: number;
+  onScreenPositionsUpdate?: (positions: PhotoScreenPosition[]) => void;
 }
 
 export const PhotoOrnaments = memo(({ 
@@ -125,7 +124,8 @@ export const PhotoOrnaments = memo(({
   photoScale = 1.5,
   frameColor = '#FFFFFF',
   treeHeight,
-  treeRadius
+  treeRadius,
+  onScreenPositionsUpdate
 }: PhotoOrnamentsProps) => {
   const actualHeight = treeHeight ?? CONFIG.tree.height;
   const actualRadius = treeRadius ?? CONFIG.tree.radius;
@@ -137,6 +137,10 @@ export const PhotoOrnaments = memo(({
   const targetChaosRef = useRef<THREE.Vector3[]>([]);
   const chaosTransitionRef = useRef(1);
   const prevScatterShapeRef = useRef(scatterShape);
+  const screenPositionsRef = useRef<PhotoScreenPosition[]>([]);
+  const screenUpdateScheduledRef = useRef<number | null>(null);
+  const screenUpdateCbRef = useRef<typeof onScreenPositionsUpdate>(onScreenPositionsUpdate);
+  screenUpdateCbRef.current = onScreenPositionsUpdate;
 
   const textureData = useMemo(() => {
     return textures.map((texture: THREE.Texture) => {
@@ -272,7 +276,7 @@ export const PhotoOrnaments = memo(({
         const screenX = (1 - screenPos.x) / 2;
         const screenY = (1 - screenPos.y) / 2;
         if (screenPos.z < 1 && screenX >= 0 && screenX <= 1 && screenY >= 0 && screenY <= 1) {
-          photoScreenPositions[i] = { index: i, x: screenX, y: screenY };
+          screenPositionsRef.current[i] = { index: i, x: screenX, y: screenY };
         }
       }
 
@@ -292,7 +296,23 @@ export const PhotoOrnaments = memo(({
         group.rotation.z += delta * objData.rotationSpeed.z;
       }
     });
+    // 将最新的屏幕坐标推给上层（仅在提供回调时），并且在 rAF 回调中触发，避免渲染阶段 setState 警告
+    if (screenUpdateCbRef.current && screenUpdateScheduledRef.current === null) {
+      screenUpdateScheduledRef.current = requestAnimationFrame(() => {
+        screenUpdateScheduledRef.current = null;
+        // 拷贝一份，防止上层修改引用
+        screenUpdateCbRef.current?.([...screenPositionsRef.current]);
+      });
+    }
   });
+
+  useEffect(() => {
+    return () => {
+      if (screenUpdateScheduledRef.current !== null) {
+        cancelAnimationFrame(screenUpdateScheduledRef.current);
+      }
+    };
+  }, []);
 
   return (
     <group ref={groupRef}>

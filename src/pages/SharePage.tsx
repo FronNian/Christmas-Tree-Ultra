@@ -1,14 +1,14 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { Canvas } from '@react-three/fiber';
 import * as THREE from 'three';
-import { Experience, GestureController, TitleOverlay, WelcomeTutorial, IntroOverlay, CenterPhoto, LyricsDisplay, photoScreenPositions, GiftStepOverlay, VoicePlayer } from '../components';
+import { Experience, GestureController, TitleOverlay, WelcomeTutorial, IntroOverlay, CenterPhoto, LyricsDisplay, GiftStepOverlay, VoicePlayer } from '../components';
 import { CHRISTMAS_MUSIC_URL } from '../config';
 import { THEME_PRESETS } from '../config/themes';
 import { isMobile, isTablet, getDefaultSceneConfig, toggleFullscreen, isFullscreen, isFullscreenSupported, enterFullscreen, lockLandscape } from '../utils/helpers';
 import { sanitizeShareConfig, sanitizePhotos, sanitizeText } from '../utils/sanitize';
 import { getShare } from '../lib/r2';
 import type { ShareData } from '../lib/r2';
-import type { SceneState, SceneConfig } from '../types';
+import type { SceneState, SceneConfig, PhotoScreenPosition } from '../types';
 import { PRESET_MUSIC } from '../types';
 import { useTimeline } from '../hooks/useTimeline';
 import { Volume2, VolumeX, TreePine, Sparkles, Loader, Frown, HelpCircle, Play, Maximize, Minimize, RotateCcw } from 'lucide-react';
@@ -52,6 +52,7 @@ export default function SharePage({ shareId }: SharePageProps) {
   const [error, setError] = useState<string | null>(null);
   const [shareData, setShareData] = useState<ShareData | null>(null);
   const assetTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const photoScreenPositionsRef = useRef<PhotoScreenPosition[]>([]);
 
   // 场景状态
   const [sceneState, setSceneState] = useState<SceneState>('FORMED');
@@ -582,7 +583,7 @@ export default function SharePage({ shareId }: SharePageProps) {
       let closestIndex = 0;
       let closestDist = Infinity;
 
-      photoScreenPositions.forEach((photoPos) => {
+      photoScreenPositionsRef.current.forEach((photoPos) => {
         if (photoPos) {
           const dx = photoPos.x - pos.x;
           const dy = photoPos.y - pos.y;
@@ -931,6 +932,9 @@ export default function SharePage({ shareId }: SharePageProps) {
             selectedPhotoIndex={selectedPhotoIndex}
             onPhotoSelect={setSelectedPhotoIndex}
             photoPaths={shareData.photos}
+            onPhotoScreenPositions={(positions) => {
+              photoScreenPositionsRef.current = positions;
+            }}
             showHeart={showHeart}
             showText={showText}
             customMessage={(sceneConfig.gestureTexts || [sceneConfig.gestureText || shareData.message || 'MERRY CHRISTMAS'])[currentTextIndex] || 'MERRY CHRISTMAS'}

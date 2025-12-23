@@ -10,7 +10,7 @@ export { FallingRibbons } from './FallingRibbons';
 export { GroundFog } from './GroundFog';
 export { SpiralRibbon } from './SpiralRibbon';
 export { GlowingStreaks } from './GlowingStreaks';
-export { PhotoOrnaments, photoScreenPositions } from './PhotoOrnaments';
+export { PhotoOrnaments } from './PhotoOrnaments';
 export { BellOrnaments } from './BellOrnaments';
 export { ShootingStars } from './ShootingStars';
 export { Aurora } from './Aurora';
