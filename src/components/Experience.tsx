@@ -156,6 +156,9 @@ export const Experience = memo(({
     [config.heartEffect?.frameColor, config.photoOrnaments?.frameColor]
   );
 
+  // 后期处理配置（只计算一次，避免每帧重新计算导致闪烁）
+  const ppConfig = useReactMemo(() => getOptimalPostProcessingConfig(), []);
+
   useFrame((_, delta) => {
     if (controlsRef.current) {
       const isFormed = sceneState === 'FORMED';
@@ -511,28 +514,21 @@ export const Experience = memo(({
         />
       )}
 
-      {(() => {
-        // 使用兼容性检测获取最佳后期处理配置
-        const ppConfig = getOptimalPostProcessingConfig();
-        if (!safeConfig.bloom.enabled || !ppConfig.enabled || !ppConfig.bloomEnabled) {
-          return null;
-        }
-        return (
-          <EffectComposer 
-            multisampling={ppConfig.multisampling}
-            frameBufferType={ppConfig.useHalfFloat ? THREE.HalfFloatType : THREE.UnsignedByteType}
-          >
-            <Bloom 
-              luminanceThreshold={mobile ? 0.95 : 0.9} 
-              luminanceSmoothing={0.025} 
-              intensity={ppConfig.bloomIntensity * (safeConfig.bloom.intensity / 1.5)} 
-              radius={mobile ? 0.3 : 0.5}
-              mipmapBlur={ppConfig.mipmapBlur}
-              levels={ppConfig.bloomLevels}
-            />
-          </EffectComposer>
-        );
-      })()}
+      {safeConfig.bloom.enabled && ppConfig.enabled && ppConfig.bloomEnabled && (
+        <EffectComposer 
+          multisampling={ppConfig.multisampling}
+          frameBufferType={ppConfig.useHalfFloat ? THREE.HalfFloatType : THREE.UnsignedByteType}
+        >
+          <Bloom 
+            luminanceThreshold={mobile ? 0.95 : 0.9} 
+            luminanceSmoothing={0.025} 
+            intensity={ppConfig.bloomIntensity * (safeConfig.bloom.intensity / 1.5)} 
+            radius={mobile ? 0.3 : 0.5}
+            mipmapBlur={ppConfig.mipmapBlur}
+            levels={ppConfig.bloomLevels}
+          />
+        </EffectComposer>
+      )}
     </>
   );
 });

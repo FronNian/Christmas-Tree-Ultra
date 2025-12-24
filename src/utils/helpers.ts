@@ -211,11 +211,20 @@ export interface WebGLCapabilities {
   isLowEnd: boolean;
 }
 
+// 缓存 WebGL 能力检测结果，避免重复创建上下文
+let cachedWebGLCapabilities: WebGLCapabilities | null = null;
+
 /**
  * 检测 WebGL 能力和兼容性
  * 用于在渲染前确定最佳配置
+ * 结果会被缓存，避免重复检测导致的性能问题
  */
 export const getWebGLCapabilities = (): WebGLCapabilities => {
+  // 返回缓存的结果
+  if (cachedWebGLCapabilities) {
+    return cachedWebGLCapabilities;
+  }
+
   const defaultCaps: WebGLCapabilities = {
     webglSupported: false,
     webgl2Supported: false,
@@ -320,7 +329,8 @@ export const getWebGLCapabilities = (): WebGLCapabilities => {
     loseContext.loseContext();
   }
 
-  return {
+  // 缓存结果，避免重复检测
+  cachedWebGLCapabilities = {
     webglSupported: true,
     webgl2Supported: isWebGL2,
     maxTextureSize,
@@ -334,6 +344,8 @@ export const getWebGLCapabilities = (): WebGLCapabilities => {
     vendor,
     isLowEnd
   };
+
+  return cachedWebGLCapabilities;
 };
 
 /**
