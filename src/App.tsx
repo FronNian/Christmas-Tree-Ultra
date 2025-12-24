@@ -820,11 +820,17 @@ export default function GrandTreeApp() {
     
     // 检查是否需要切换音乐源
     const currentSrc = audioRef.current.src;
-    // 标准化 URL 进行比较（移除可能的查询参数和哈希）
+    
+    // 标准化 URL 进行比较
     const normalizeUrl = (url: string) => {
+      // data URL 直接返回前100个字符作为标识（避免比较整个 base64）
+      if (url.startsWith('data:')) {
+        return url.substring(0, 100);
+      }
+      // 普通 URL 移除查询参数和哈希
       try {
         const urlObj = new URL(url, window.location.href);
-        return urlObj.pathname + urlObj.search;
+        return urlObj.pathname;
       } catch {
         return url;
       }
@@ -834,7 +840,15 @@ export default function GrandTreeApp() {
     const newNormalized = normalizeUrl(musicUrl);
     const needsReload = currentNormalized !== newNormalized;
     
+    console.log('Music change check:', { 
+      selected: sceneConfig.music?.selected,
+      hasCustomUrl: !!sceneConfig.music?.customUrl,
+      needsReload 
+    });
+    
     if (needsReload) {
+      console.log('Switching music to:', musicUrl.substring(0, 50) + '...');
+      
       // 停止旧的更新循环
       if (audioLevelUpdateStopRef.current) {
         audioLevelUpdateStopRef.current();
@@ -858,29 +872,37 @@ export default function GrandTreeApp() {
       const newAudio = new Audio(musicUrl);
       newAudio.loop = true;
       newAudio.volume = volume;
+      newAudio.preload = 'auto';
       audioRef.current = newAudio;
       
-      // 等待音频加载完成后再创建分析器
-      const handleLoadedData = () => {
-        if (audioRef.current) {
-          audioAnalyserRef.current = createAudioAnalyser(audioRef.current);
+      // 等待音频加载完成后再创建分析器和播放
+      const handleCanPlay = () => {
+        if (audioRef.current === newAudio) {
+          audioAnalyserRef.current = createAudioAnalyser(newAudio);
           if (audioAnalyserRef.current) {
             audioLevelUpdateStopRef.current = startAudioLevelUpdate(audioAnalyserRef.current, audioLevelRef);
           }
+          if (wasPlaying) {
+            newAudio.play().catch((e) => console.warn('Auto-play failed:', e));
+          }
         }
-        newAudio.removeEventListener('loadeddata', handleLoadedData);
+        newAudio.removeEventListener('canplaythrough', handleCanPlay);
       };
       
-      newAudio.addEventListener('loadeddata', handleLoadedData);
+      newAudio.addEventListener('canplaythrough', handleCanPlay);
       
-      // 如果音频已经加载完成，立即创建分析器
-      if (newAudio.readyState >= 2) {
-        handleLoadedData();
+      // 处理加载错误
+      newAudio.addEventListener('error', (e) => {
+        console.error('Music load error:', e);
+      }, { once: true });
+      
+      // 如果音频已经可以播放，立即处理
+      if (newAudio.readyState >= 3) {
+        handleCanPlay();
       }
       
-      if (wasPlaying) {
-        newAudio.play().catch(() => {});
-      }
+      // 开始加载
+      newAudio.load();
     }
   }, [sceneConfig.music?.selected, sceneConfig.music?.customUrl, sceneConfig.music?.volume, getMusicUrl]);
 

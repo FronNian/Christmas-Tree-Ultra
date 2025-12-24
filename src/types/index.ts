@@ -57,6 +57,7 @@ export const PRESET_MUSIC = [
   { id: 'christmas-list', name: '📝 Christmas List', url: '/music/Christmas List - Anson Seabra.mp3', lrc: '/music/Christmas List - Anson Seabra.lrc' },
   { id: 'i-love-you-so', name: '💕 I Love You So', url: '/music/I Love You So - The Walters.mp3', lrc: '/music/I Love You So - The Walters.lrc' },
   { id: 'yi-dian-dian', name: '✨ 一点点 (为什么晚上总是有星星)', url: '/music/一点点 (为什么晚上总是有星星) - 董唧唧、芊芊龍.mp3', lrc: '/music/一点点 (为什么晚上总是有星星) - 董唧唧、芊芊龍.lrc' },
+  { id: 'we-dont-talk-anymore', name: '💔 We Don\'t Talk Anymore', url: '/music/We Don\'t Talk Anymore - Charlie Puth、Selena Gomez.mp3', lrc: '/music/We Don\'t Talk Anymore - Charlie Puth、Selena Gomez.lrc' },
 ] as const;
 
 // 动画缓动类型
