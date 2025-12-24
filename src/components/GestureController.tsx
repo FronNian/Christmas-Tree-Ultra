@@ -103,7 +103,7 @@ export const GestureController = ({
 
   /**
    * 核心算法：判断手指是否弯曲
-   * 放宽阈值以提高握拳识别率
+   * 平衡握拳和张开手掌的识别率
    */
   const getFingerState = useCallback(
     (landmarks: NormalizedLandmark[], wrist: NormalizedLandmark) => {
@@ -111,7 +111,7 @@ export const GestureController = ({
       // 指根索引(MCP): 拇指2, 食指5, 中指9, 无名指13, 小指17
       // PIP关节索引: 食指6, 中指10, 无名指14, 小指18
       
-      // 计算手指弯曲程度 - 使用多重判定提高准确性
+      // 计算手指弯曲程度
       const isCurled = (tipIdx: number, pipIdx: number, mcpIdx: number) => {
         const tip = landmarks[tipIdx];
         const pip = landmarks[pipIdx]; // PIP关节（第二关节）
@@ -121,21 +121,22 @@ export const GestureController = ({
         const tipToWrist = Math.hypot(tip.x - wrist.x, tip.y - wrist.y);
         const mcpToWrist = Math.hypot(mcp.x - wrist.x, mcp.y - wrist.y);
         
-        // 2. 指尖到PIP的距离（弯曲时指尖靠近PIP）
-        const tipToPip = Math.hypot(tip.x - pip.x, tip.y - pip.y);
-        const mcpToPip = Math.hypot(mcp.x - pip.x, mcp.y - pip.y);
+        // 2. 指尖到指根的距离
+        const tipToMcp = Math.hypot(tip.x - mcp.x, tip.y - mcp.y);
+        const pipToMcp = Math.hypot(pip.x - mcp.x, pip.y - mcp.y);
         
-        // 3. 放宽距离比判定：从 1.3 放宽到 1.5
-        const distanceCheck = tipToWrist < mcpToWrist * 1.5;
+        // 主要判定：指尖到手腕的距离比（放宽到 1.4）
+        const distanceCheck = tipToWrist < mcpToWrist * 1.4;
         
-        // 4. 额外检查：指尖是否靠近PIP（弯曲的手指指尖会靠近第二关节）
-        const bendCheck = tipToPip < mcpToPip * 1.2;
+        // 辅助判定：指尖到指根的距离很短（弯曲时指尖靠近指根）
+        // 只有当指尖非常靠近指根时才额外判定为弯曲
+        const severelyBent = tipToMcp < pipToMcp * 0.8;
         
-        // 满足任一条件即视为弯曲
-        return distanceCheck || bendCheck;
+        // 主要条件满足，或者严重弯曲时判定为弯曲
+        return distanceCheck || severelyBent;
       };
 
-      // 拇指单独逻辑 - 放宽判定
+      // 拇指单独逻辑
       const thumbTip = landmarks[4];
       const thumbIP = landmarks[3]; // 拇指IP关节
       const pinkyMCP = landmarks[17];
@@ -144,12 +145,12 @@ export const GestureController = ({
       const palmWidth = Math.hypot(indexMCP.x - pinkyMCP.x, indexMCP.y - pinkyMCP.y);
       const thumbOutDist = Math.hypot(thumbTip.x - pinkyMCP.x, thumbTip.y - pinkyMCP.y);
       
-      // 拇指弯曲检测：指尖靠近IP关节
+      // 拇指弯曲检测：指尖非常靠近IP关节
       const thumbTipToIP = Math.hypot(thumbTip.x - thumbIP.x, thumbTip.y - thumbIP.y);
-      const thumbCurled = thumbTipToIP < palmWidth * 0.4;
+      const thumbCurled = thumbTipToIP < palmWidth * 0.3;
       
-      // 拇指伸直：从 1.2 放宽到 1.0，更容易判定为伸直
-      const thumbExtended = thumbOutDist > palmWidth * 1.0 && !thumbCurled;
+      // 拇指伸直判定
+      const thumbExtended = thumbOutDist > palmWidth * 0.9 && !thumbCurled;
 
       return {
         thumb: thumbExtended,
