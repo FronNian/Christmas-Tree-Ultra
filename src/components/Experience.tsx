@@ -63,6 +63,7 @@ interface ExperienceProps {
   onGiftOpen?: () => void;
   onAssetsLoaded?: () => void;
   audioLevelRef?: React.MutableRefObject<number | undefined>;
+  disableAutoRotate?: boolean;
 }
 
 // 使用 memo 封装，仅在关键 props 变化时重渲染
@@ -95,7 +96,8 @@ export const Experience = memo(({
   isGiftOpen = false,
   onGiftOpen,
   onAssetsLoaded,
-  audioLevelRef
+  audioLevelRef,
+  disableAutoRotate = false
 }: ExperienceProps) => {
   const controlsRef = useRef<any>(null);
   const { active, total } = useProgress();
@@ -263,7 +265,7 @@ export const Experience = memo(({
         zoomSpeed={0.8}
         minDistance={25}
         maxDistance={100}
-        autoRotate={selectedPhotoIndex === null && rotationSpeed.current === 0 && sceneState === 'FORMED'}
+        autoRotate={!disableAutoRotate && selectedPhotoIndex === null && rotationSpeed.current === 0 && sceneState === 'FORMED'}
         autoRotateSpeed={0.3}
         minPolarAngle={sceneState === 'CHAOS' ? 0 : Math.PI / 4}
         maxPolarAngle={sceneState === 'CHAOS' ? Math.PI : Math.PI / 1.8}

@@ -1252,6 +1252,7 @@ export default function SharePage({ shareId }: SharePageProps) {
             onGiftOpen={timeline.onGiftOpen}
             audioLevelRef={audioLevelRef}
             onAssetsLoaded={() => setAssetsReady(true)}
+            disableAutoRotate={showHeart || showText || timeline.state.isPlaying}
           />
         </Canvas>
       </div>

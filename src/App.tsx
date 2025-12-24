@@ -1457,6 +1457,7 @@ export default function GrandTreeApp() {
             isGiftOpen={timeline.isGiftOpen}
             audioLevelRef={audioLevelRef}
             onGiftOpen={timeline.onGiftOpen}
+            disableAutoRotate={showHeart || showText || timeline.state.isPlaying}
           />
         </Canvas>
       </div>
