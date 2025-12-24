@@ -909,6 +909,23 @@ export default function SharePage({ shareId }: SharePageProps) {
     }
   }, [showTutorial, musicPlaying]);
 
+  // 音乐加载完成后 3 秒内自动播放（处理浏览器自动播放限制）
+  useEffect(() => {
+    // 等待加载完成、音乐准备好、没有教程和音乐提示
+    if (loading || !musicReady || showTutorial || showSoundPrompt) return;
+    
+    // 3 秒内尝试自动播放
+    const autoPlayTimer = setTimeout(() => {
+      if (audioRef.current && audioRef.current.paused && musicPlaying) {
+        audioRef.current.play().catch(() => {
+          console.log('Auto play blocked by browser, waiting for user interaction');
+        });
+      }
+    }, 1000); // 1秒后尝试播放，给页面渲染一点时间
+    
+    return () => clearTimeout(autoPlayTimer);
+  }, [loading, musicReady, showTutorial, showSoundPrompt, musicPlaying]);
+
   // 播放/暂停音乐
   const toggleMusic = useCallback(() => {
     if (!audioRef.current) {
