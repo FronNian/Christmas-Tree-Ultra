@@ -172,11 +172,20 @@ export const GestureController = ({
     let handLandmarker: HandLandmarker | null = null;
     let requestRef: number;
     let isActive = true;
+    let loadingTimeoutId: ReturnType<typeof setTimeout> | null = null;
+    let retryCount = 0;
+    const MAX_RETRIES = 2;
+    const LOADING_TIMEOUT = 15000; // 15秒超时
 
     const baseUrl = (import.meta.env.BASE_URL || '/').replace(/\/$/, '');
     const localWasmRoot = `${baseUrl}/wasm`;
     const localModelPath = `${baseUrl}/models/hand_landmarker.task`;
-    const cdnWasmRoot = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm';
+    // 多个 CDN 备选
+    const cdnWasmRoots = [
+      'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm',
+      'https://unpkg.com/@mediapipe/tasks-vision@0.10.3/wasm',
+      'https://cdnjs.cloudflare.com/ajax/libs/mediapipe/0.10.3/wasm'
+    ];
 
     const createLandmarker = async (vision: any, delegate: 'GPU' | 'CPU') => {
       return HandLandmarker.createFromOptions(vision, {
@@ -192,50 +201,131 @@ export const GestureController = ({
       });
     };
 
+    // 带超时的 Promise
+    const withTimeout = <T,>(promise: Promise<T>, ms: number, errorMsg: string): Promise<T> => {
+      return Promise.race([
+        promise,
+        new Promise<T>((_, reject) => 
+          setTimeout(() => reject(new Error(errorMsg)), ms)
+        )
+      ]);
+    };
+
     const setup = async () => {
-      callbacksRef.current.onStatus('LOADING AI...');
+      callbacksRef.current.onStatus('AI LOADING...');
+
+      // 设置总体超时
+      loadingTimeoutId = setTimeout(() => {
+        if (isActive && !handLandmarker) {
+          console.warn('AI loading timeout, giving up');
+          callbacksRef.current.onStatus('AI TIMEOUT');
+        }
+      }, LOADING_TIMEOUT + 5000);
 
       try {
-        const streamPromise = navigator.mediaDevices.getUserMedia({
-          video: {
-            facingMode: 'user',
-            width: { ideal: 320 },
-            height: { ideal: 240 },
-            frameRate: { ideal: 30 },
-          },
-          audio: false,
-        });
-
-        const landmarkerPromise = (async () => {
-          // 先尝试本地资源，失败再回退 CDN，保证离线/内网可用
-          let vision = await FilesetResolver.forVisionTasks(localWasmRoot).catch((err) => {
-            console.warn('Load wasm from local failed, fallback to CDN.', err);
-            callbacksRef.current.onStatus('AI LOADING (CDN fallback)...');
-            return null;
-          });
-
-          if (!vision) {
-            vision = await FilesetResolver.forVisionTasks(cdnWasmRoot);
-          }
-
-          // 优先 GPU，失败自动回退 CPU，避免低端或 WebGL 问题导致整体失败
-          try {
-            return await createLandmarker(vision, 'GPU');
-          } catch (gpuErr) {
-            console.warn('GPU delegate failed, fallback to CPU.', gpuErr);
-            callbacksRef.current.onStatus('AI LOADING (CPU fallback)...');
-            return await createLandmarker(vision, 'CPU');
-          }
-        })();
-
-        const [stream, landmarker] = await Promise.all([
-          streamPromise,
-          landmarkerPromise,
-        ]);
+        // 1. 先获取摄像头（通常很快）
+        callbacksRef.current.onStatus('AI: 请求摄像头...');
+        const stream = await withTimeout(
+          navigator.mediaDevices.getUserMedia({
+            video: {
+              facingMode: 'user',
+              width: { ideal: 320 },
+              height: { ideal: 240 },
+              frameRate: { ideal: 30 },
+            },
+            audio: false,
+          }),
+          10000,
+          '摄像头请求超时'
+        );
 
         if (!isActive) {
           stream.getTracks().forEach((track) => track.stop());
-          landmarker.close();
+          return;
+        }
+
+        // 2. 加载 WASM（优先本地，本地超时更长因为是主要来源）
+        callbacksRef.current.onStatus('AI: 加载引擎...');
+        let vision = null;
+        let usedLocal = false;
+        
+        // 优先尝试本地资源（给更长的超时时间，因为这是首选）
+        try {
+          console.log('Loading WASM from local:', localWasmRoot);
+          vision = await withTimeout(
+            FilesetResolver.forVisionTasks(localWasmRoot),
+            15000, // 本地资源给 15 秒，因为是首选来源
+            '本地 WASM 加载超时'
+          );
+          usedLocal = true;
+          console.log('Local WASM loaded successfully');
+        } catch (localErr) {
+          console.warn('Load wasm from local failed:', localErr);
+          callbacksRef.current.onStatus('AI: 本地加载失败，尝试 CDN...');
+        }
+
+        // 本地失败，尝试 CDN（作为备选）
+        if (!vision) {
+          for (let i = 0; i < cdnWasmRoots.length && !vision; i++) {
+            const cdnUrl = cdnWasmRoots[i];
+            callbacksRef.current.onStatus(`AI: 加载引擎 (CDN ${i + 1})...`);
+            try {
+              console.log(`Trying CDN ${i + 1}:`, cdnUrl);
+              vision = await withTimeout(
+                FilesetResolver.forVisionTasks(cdnUrl),
+                12000,
+                `CDN ${i + 1} 加载超时`
+              );
+              console.log(`CDN ${i + 1} loaded successfully`);
+            } catch (cdnErr) {
+              console.warn(`CDN ${i + 1} failed:`, cdnErr);
+            }
+          }
+        }
+
+        if (!vision) {
+          throw new Error('无法加载 AI 引擎，请检查网络');
+        }
+
+        if (!isActive) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+
+        // 3. 加载模型（本地模型给更长时间）
+        const modelTimeout = usedLocal ? 20000 : 15000; // 本地 20 秒，CDN 15 秒
+        callbacksRef.current.onStatus('AI: 加载模型...');
+        let landmarker: HandLandmarker | null = null;
+        
+        // 优先 GPU
+        try {
+          console.log('Loading model with GPU delegate...');
+          landmarker = await withTimeout(
+            createLandmarker(vision, 'GPU'),
+            modelTimeout,
+            'GPU 模型加载超时'
+          );
+          console.log('Model loaded with GPU');
+        } catch (gpuErr) {
+          console.warn('GPU delegate failed:', gpuErr);
+          callbacksRef.current.onStatus('AI: 加载模型 (CPU)...');
+          try {
+            console.log('Falling back to CPU delegate...');
+            landmarker = await withTimeout(
+              createLandmarker(vision, 'CPU'),
+              modelTimeout,
+              'CPU 模型加载超时'
+            );
+            console.log('Model loaded with CPU');
+          } catch (cpuErr) {
+            console.error('CPU delegate also failed:', cpuErr);
+            throw new Error('模型加载失败');
+          }
+        }
+
+        if (!isActive || !landmarker) {
+          stream.getTracks().forEach((track) => track.stop());
+          landmarker?.close();
           return;
         }
 
@@ -247,6 +337,7 @@ export const GestureController = ({
             if (videoRef.current && canvasRef.current) {
                requestAnimationFrame(() => {
                  if(!isActive) return;
+                 if (loadingTimeoutId) clearTimeout(loadingTimeoutId);
                  callbacksRef.current.onStatus('AI READY');
                  lastFrameTimeRef.current = Date.now();
                  predictWebcam();
@@ -257,9 +348,21 @@ export const GestureController = ({
       } catch (err: unknown) {
         console.error('AI Setup Error:', err);
         const errorName = (err as { name?: string })?.name;
+        const errorMessage = (err as Error)?.message || '';
+        
         if (errorName === 'NotAllowedError' || errorName === 'NotReadableError' || errorName === 'NotFoundError') {
-          // 摄像头权限/设备问题，直接提示并停止重试
           callbacksRef.current.onStatus('AI PERMISSION DENIED');
+        } else if (errorMessage.includes('超时') || errorMessage.includes('timeout')) {
+          // 超时可以重试
+          if (retryCount < MAX_RETRIES) {
+            retryCount++;
+            callbacksRef.current.onStatus(`AI: 重试中 (${retryCount}/${MAX_RETRIES})...`);
+            setTimeout(() => {
+              if (isActive) setup();
+            }, 1000);
+          } else {
+            callbacksRef.current.onStatus('AI TIMEOUT');
+          }
         } else {
           callbacksRef.current.onStatus('AI ERROR');
         }
@@ -506,6 +609,7 @@ export const GestureController = ({
 
     return () => {
       isActive = false;
+      if (loadingTimeoutId) clearTimeout(loadingTimeoutId);
       cancelAnimationFrame(requestRef);
       if (videoRef.current?.srcObject) {
         const stream = videoRef.current.srcObject as MediaStream;
