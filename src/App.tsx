@@ -1187,54 +1187,66 @@ export default function GrandTreeApp() {
       const localShare = getLocalShare();
       
       if (localShare) {
-        // 已有分享，获取详情并显示弹窗
-        const shareData = await getShare(localShare.shareId);
-        if (shareData) {
-          const shareUrl = getShareUrl(localShare.shareId);
-          setModalShareUrl(shareUrl);
-          setModalShareInfo({
-            shareId: localShare.shareId,
-            expiresAt: shareData.expiresAt,
-            canEdit: true,
-            onCopy: async () => {
-              try {
-                await navigator.clipboard.writeText(shareUrl);
-                showModal('alert', '已复制', '分享链接已复制到剪贴板');
-              } catch {
-                // 复制失败时保持弹窗打开
-              }
-            },
-            onRefresh: async () => {
-              const result = await refreshShareExpiry(localShare.shareId, localShare.editToken);
-              if (result.success) {
-                showModal('alert', '续期成功', '分享有效期已延长 7 天');
-              } else {
-                showModal('error', '续期失败', result.error);
-              }
-            },
-            onDelete: async () => {
-              const result = await deleteShare(localShare.shareId, localShare.editToken);
-              if (result.success) {
-                setModalVisible(false);
-                showModal('alert', '已删除', '分享已删除，您可以创建新的分享');
-              } else {
-                showModal('error', '删除失败', result.error);
-              }
+        // 已有分享 - 先显示弹窗，后台更新
+        const shareUrl = getShareUrl(localShare.shareId);
+        
+        // 立即显示弹窗（使用缓存的过期时间，后台更新）
+        setModalShareUrl(shareUrl);
+        setModalShareInfo({
+          shareId: localShare.shareId,
+          expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000, // 临时值，后台会更新
+          canEdit: true,
+          onCopy: async () => {
+            try {
+              await navigator.clipboard.writeText(shareUrl);
+              showModal('alert', '已复制', '分享链接已复制到剪贴板');
+            } catch {
+              // 复制失败时保持弹窗打开
             }
-          });
-          showModal('share', '分享管理', '您已创建过分享，可以更新或管理');
-          
-          // 同时更新分享内容
-          await updateShare(
+          },
+          onRefresh: async () => {
+            const result = await refreshShareExpiry(localShare.shareId, localShare.editToken);
+            if (result.success) {
+              showModal('alert', '续期成功', '分享有效期已延长 7 天');
+            } else {
+              showModal('error', '续期失败', result.error);
+            }
+          },
+          onDelete: async () => {
+            const result = await deleteShare(localShare.shareId, localShare.editToken);
+            if (result.success) {
+              setModalVisible(false);
+              showModal('alert', '已删除', '分享已删除，您可以创建新的分享');
+            } else {
+              showModal('error', '删除失败', result.error);
+            }
+          }
+        });
+        showModal('share', '分享管理', '正在同步更新...');
+        
+        // 并行：获取分享详情 + 更新分享内容
+        const [shareData, updateResult] = await Promise.all([
+          getShare(localShare.shareId),
+          updateShare(
             localShare.shareId,
             localShare.editToken,
             uploadedPhotos,
             sceneConfig as unknown as Record<string, unknown>,
             sceneConfig.gestureText
-          );
+          )
+        ]);
+        
+        if (shareData) {
+          // 更新弹窗中的过期时间
+          setModalShareInfo(prev => prev ? {
+            ...prev,
+            expiresAt: shareData.expiresAt
+          } : prev);
+          setModalMessage(updateResult.success ? '您已创建过分享，内容已同步更新' : '您已创建过分享，可以更新或管理');
         } else {
           // 分享已过期或不存在，清除本地记录
           clearLocalShare();
+          setModalVisible(false);
           showModal('alert', '提示', '之前的分享已过期，请重新创建');
         }
       } else {
@@ -1247,12 +1259,13 @@ export default function GrandTreeApp() {
         
         if (result.success && result.shareId) {
           const shareUrl = getShareUrl(result.shareId);
-          const shareData = await getShare(result.shareId);
+          // 直接使用返回的数据，不需要再次 getShare
+          const expiresAt = Date.now() + 7 * 24 * 60 * 60 * 1000;
           
           setModalShareUrl(shareUrl);
           setModalShareInfo({
             shareId: result.shareId,
-            expiresAt: shareData?.expiresAt || Date.now() + 7 * 24 * 60 * 60 * 1000,
+            expiresAt,
             canEdit: true,
             onCopy: async () => {
               try {
