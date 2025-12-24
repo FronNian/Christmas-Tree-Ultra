@@ -837,11 +837,14 @@ export const restoreVoiceDataToConfig = (
   }
   
   // 还原自定义音乐
-  if (customMusicUrl) {
-    const music = restoredConfig.music as { selected?: string; customUrl?: string } | undefined;
-    if (music?.customUrl === 'music:custom') {
+  const music = restoredConfig.music as { selected?: string; customUrl?: string } | undefined;
+  if (music) {
+    if (customMusicUrl && music.customUrl === 'music:custom') {
+      // 新格式：从 customMusicUrl 字段还原
       music.customUrl = customMusicUrl;
     }
+    // 旧格式兼容：如果 customUrl 已经是 base64 数据，保持不变
+    // （旧数据直接存在 config.music.customUrl 里）
   }
   
   return restoredConfig;

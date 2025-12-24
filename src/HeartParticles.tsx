@@ -401,25 +401,6 @@ const UnifiedPhotoDisplay = ({
   // 轮播阶段的照片缩放（比环绕时大）
   const carouselScale = photoScale * (isMobileDevice ? 1.6 : 2.2);
   
-  // 初始一次性日志：记录爱心预览配置
-  useEffect(() => {
-    fetch('http://127.0.0.1:7242/ingest/c81cdc3a-c950-4789-84e9-c3279bce9827',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({
-        sessionId:'debug-session',
-        runId:'pre-fix',
-        hypothesisId:'H5',
-        location:'HeartParticles.tsx:UnifiedPhotoDisplay:init',
-        message:'UnifiedPhotoDisplay init',
-        data:{photoCount:photos.length,interval,photoScale,frameColor},
-        timestamp:Date.now()
-      })
-    }).catch(()=>{});
-  // 仅在挂载时记录一次
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  
   // visible 变化时重置状态：重新从环绕阶段开始
   useEffect(() => {
     if (visible && !wasVisibleRef.current) {
@@ -472,21 +453,6 @@ const UnifiedPhotoDisplay = ({
             setIsSliding(false);
             setSlideProgress(0);
             const nextIndex = (carouselIndex + 1) % photos.length;
-            
-            // 完成一次切换的日志
-            fetch('http://127.0.0.1:7242/ingest/c81cdc3a-c950-4789-84e9-c3279bce9827',{
-              method:'POST',
-              headers:{'Content-Type':'application/json'},
-              body:JSON.stringify({
-                sessionId:'debug-session',
-                runId:'pre-fix',
-                hypothesisId:'H5',
-                location:'HeartParticles.tsx:UnifiedPhotoDisplay:switch-complete',
-                message:'photo switch complete',
-                data:{fromIndex:carouselIndex,toIndex:nextIndex,now},
-                timestamp:Date.now()
-              })
-            }).catch(()=>{});
 
             setCarouselIndex(nextIndex);
             lastCarouselSwitchRef.current = now;
@@ -497,44 +463,11 @@ const UnifiedPhotoDisplay = ({
           if (now - lastCarouselSwitchRef.current >= effectiveInterval) {
             setIsSliding(true);
             slideStartRef.current = now;
-            
-            // 开始一次切换的日志
-            fetch('http://127.0.0.1:7242/ingest/c81cdc3a-c950-4789-84e9-c3279bce9827',{
-              method:'POST',
-              headers:{'Content-Type':'application/json'},
-              body:JSON.stringify({
-                sessionId:'debug-session',
-                runId:'pre-fix',
-                hypothesisId:'H5',
-                location:'HeartParticles.tsx:UnifiedPhotoDisplay:switch-start',
-                message:'photo switch start',
-                data:{fromIndex:carouselIndex,effectiveInterval,now},
-                timestamp:Date.now()
-              })
-            }).catch(()=>{});
           }
         }
       }
     }
     
-    // 阶段变更日志（每种状态只记录一次）
-    if (lastLoggedPhaseRef.current !== phase) {
-      lastLoggedPhaseRef.current = phase;
-      fetch('http://127.0.0.1:7242/ingest/c81cdc3a-c950-4789-84e9-c3279bce9827',{
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({
-          sessionId:'debug-session',
-          runId:'pre-fix',
-          hypothesisId:'H5',
-          location:'HeartParticles.tsx:UnifiedPhotoDisplay:phase-change',
-          message:'phase changed',
-          data:{phase,phaseTime:phaseTimeRef.current},
-          timestamp:Date.now()
-        })
-      }).catch(()=>{});
-    }
-
     // 更新每张照片的位置
     const baseRotation = rotationRef.current;
     const shrinkEased = 1 - Math.pow(1 - shrinkProgressRef.current, 3);
@@ -1274,46 +1207,10 @@ export const HeartParticles = ({
     if (!visible) {
       setPaused(false);
     }
-
-    if (visible) {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/c81cdc3a-c950-4789-84e9-c3279bce9827',{
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({
-          sessionId:'debug-session',
-          runId:'pre-fix',
-          hypothesisId:'H4',
-          location:'HeartParticles.tsx:visible-effect',
-          message:'HeartParticles became visible',
-          data:{count,hasCenterPhotos:!!(centerPhotos && centerPhotos.length),photoInterval},
-          timestamp:Date.now()
-        })
-      }).catch(()=>{});
-      // #endregion
-    }
-  }, [visible, count, centerPhotos, photoInterval]);
+  }, [visible]);
   
   useFrame((state, delta) => {
     if (!pointsRef.current || !groupRef.current || !materialRef.current) return;
-
-    // #region agent log
-    if (!initializedRef.current && visible) {
-      fetch('http://127.0.0.1:7242/ingest/c81cdc3a-c950-4789-84e9-c3279bce9827',{
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({
-          sessionId:'debug-session',
-          runId:'pre-fix',
-          hypothesisId:'H4',
-          location:'HeartParticles.tsx:first-frame',
-          message:'HeartParticles first active frame',
-          data:{cameraZ:state.camera.position.z},
-          timestamp:Date.now()
-        })
-      }).catch(()=>{});
-    }
-    // #endregion
     
     // 更新动画时间（暂停时不更新）
     if (!paused) {

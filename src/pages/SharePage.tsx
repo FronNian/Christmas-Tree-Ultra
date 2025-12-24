@@ -283,12 +283,22 @@ export default function SharePage({ shareId }: SharePageProps) {
         setLoadingStage('正在加载背景音乐...');
         const musicConfig = cfg.music;
         let musicUrl = CHRISTMAS_MUSIC_URL;
+        
+        console.log('SharePage music config:', {
+          selected: musicConfig?.selected,
+          hasCustomUrl: !!musicConfig?.customUrl,
+          customUrlLength: musicConfig?.customUrl?.length,
+          customUrlPreview: musicConfig?.customUrl?.substring(0, 100)
+        });
+        
         if (musicConfig) {
           if (musicConfig.selected === 'custom' && musicConfig.customUrl) {
             musicUrl = musicConfig.customUrl;
+            console.log('Using custom music URL');
           } else {
             const preset = PRESET_MUSIC.find(m => m.id === musicConfig.selected);
             if (preset) musicUrl = preset.url;
+            console.log('Using preset music:', musicConfig.selected);
           }
         }
         
@@ -478,22 +488,6 @@ export default function SharePage({ shareId }: SharePageProps) {
         // 故事线爱心步骤：将「持续时间」视为每张照片的中心预览时间
         const perPhoto = currentStep.duration || 0;
         setHeartStepIntervalOverride(perPhoto > 0 ? perPhoto : null);
-
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/c81cdc3a-c950-4789-84e9-c3279bce9827',{
-          method:'POST',
-          headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({
-            sessionId:'debug-session',
-            runId:'pre-fix',
-            hypothesisId:'H3',
-            location:'SharePage.tsx:timeline-heart-step',
-            message:'enter heart step (SharePage)',
-            data:{perPhoto,photoCount:shareData?.photos?.length || 0},
-            timestamp:Date.now()
-          })
-        }).catch(()=>{});
-        // #endregion
       }
       // 礼物步骤 - 隐藏圣诞树，显示礼物盒
       else if (currentStep?.type === 'gift') {

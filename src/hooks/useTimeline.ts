@@ -121,22 +121,6 @@ export function useTimeline(
 
       const total = ORBIT_MS + SHRINK_MS + perPhoto * photoCount;
 
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/c81cdc3a-c950-4789-84e9-c3279bce9827',{
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({
-          sessionId:'debug-session',
-          runId:'pre-fix',
-          hypothesisId:'H1',
-          location:'useTimeline.ts:getStepDuration',
-          message:'heart step duration computed',
-          data:{perPhoto,photoCount,total},
-          timestamp:Date.now()
-        })
-      }).catch(()=>{});
-      // #endregion
-
       return total;
     }
     
@@ -174,22 +158,6 @@ export function useTimeline(
     const step = config.steps[index];
     const delay = step.delay || 0;
     const actualDuration = getStepDuration(step);
-
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/c81cdc3a-c950-4789-84e9-c3279bce9827',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({
-        sessionId:'debug-session',
-        runId:'pre-fix',
-        hypothesisId:'H2',
-        location:'useTimeline.ts:playStep',
-        message:'playStep invoked',
-        data:{index,type:step.type,duration:step.duration,actualDuration,totalPhotos},
-        timestamp:Date.now()
-      })
-    }).catch(()=>{});
-    // #endregion
 
     setState({
       isPlaying: true,

@@ -2841,6 +2841,7 @@ export const SettingsPanel = ({
                   }
                   const reader = new FileReader();
                   reader.onload = () => {
+                    console.log('Music file loaded, updating config with customUrl');
                     onChange({
                       ...config,
                       music: { ...safeConfig.music, customUrl: reader.result as string }

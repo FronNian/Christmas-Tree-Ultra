@@ -390,22 +390,6 @@ export default function GrandTreeApp() {
         // 在故事线模式下，将「持续时间」视为每张照片的中心预览时间
         const perPhoto = currentStep.duration || 0;
         setHeartStepIntervalOverride(perPhoto > 0 ? perPhoto : null);
-
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/c81cdc3a-c950-4789-84e9-c3279bce9827',{
-          method:'POST',
-          headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({
-            sessionId:'debug-session',
-            runId:'pre-fix',
-            hypothesisId:'H3',
-            location:'App.tsx:timeline-heart-step',
-            message:'enter heart step (App)',
-            data:{perPhoto,photoCount:uploadedPhotos.length},
-            timestamp:Date.now()
-          })
-        }).catch(()=>{});
-        // #endregion
       }
       // 礼物步骤 - 隐藏圣诞树，显示礼物盒
       else if (currentStep?.type === 'gift') {
@@ -813,11 +797,22 @@ export default function GrandTreeApp() {
 
   // 音乐选择变化时重新加载
   useEffect(() => {
-    if (!audioRef.current) return;
+    // 首次渲染时跳过（让初始化 useEffect 处理）
+    if (!audioRef.current) {
+      console.log('Music effect: audioRef not ready, skipping');
+      return;
+    }
     
     const musicUrl = getMusicUrl();
     const wasPlaying = !audioRef.current.paused;
     const volume = sceneConfig.music?.volume ?? 0.5;
+    
+    console.log('Music effect triggered:', {
+      selected: sceneConfig.music?.selected,
+      hasCustomUrl: !!sceneConfig.music?.customUrl,
+      customUrlLength: sceneConfig.music?.customUrl?.length,
+      musicUrlPreview: musicUrl.substring(0, 100)
+    });
     
     // 检查是否需要切换音乐源
     const currentSrc = audioRef.current.src;
