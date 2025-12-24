@@ -54,11 +54,11 @@ const generateTextPositionsFromCanvas = (
   
   const hasChinese = containsChinese(text);
   // 中文使用更大的字体以获得更多像素点
-  const baseFontSize = isMobile ? (hasChinese ? 100 : 80) : (hasChinese ? 150 : 120);
-  // 使用系统默认中文字体
+  const baseFontSize = isMobile ? (hasChinese ? 120 : 80) : (hasChinese ? 200 : 120);
+  // 使用系统默认中文字体 - 中文优先使用中文字体
   const fontFamily = hasChinese 
-    ? 'sans-serif' 
-    : '"Microsoft YaHei", "PingFang SC", sans-serif';
+    ? '"Microsoft YaHei", "PingFang SC", "Noto Sans SC", "SimHei", sans-serif' 
+    : 'Arial, sans-serif';
   
   ctx.font = `bold ${baseFontSize}px ${fontFamily}`;
   const metrics = ctx.measureText(text);
@@ -91,9 +91,9 @@ const generateTextPositionsFromCanvas = (
   const pixels = imageData.data;
   
   const basePositions: { x: number; y: number }[] = [];
-  // 中文需要更密集的采样
-  const sampleStep = isMobile ? (hasChinese ? 2 : 3) : (hasChinese ? 1 : 2);
-  const spaceScale = scale * 0.08;
+  // 中文需要更密集的采样（步长越小越密集）
+  const sampleStep = isMobile ? (hasChinese ? 1 : 2) : (hasChinese ? 1 : 2);
+  const spaceScale = scale * (hasChinese ? 0.06 : 0.08);
   
   for (let y = 0; y < canvas.height; y += sampleStep) {
     for (let x = 0; x < canvas.width; x += sampleStep) {
@@ -144,9 +144,9 @@ export const TextParticles = ({ text, visible, color = '#FFD700', size = 1 }: Te
   const { camera } = useThree();
   const [isReady, setIsReady] = useState(false);
   
-  // 中文需要更多粒子
+  // 中文需要更多粒子才能显示清晰
   const hasChinese = containsChinese(text);
-  const count = hasChinese ? 3000 : 2000;
+  const count = hasChinese ? 5000 : 2000;
   const mobile = isMobileDevice();
   
   const particleSeeds = useMemo(() => {
@@ -271,7 +271,7 @@ export const TextParticles = ({ text, visible, color = '#FFD700', size = 1 }: Te
         <pointsMaterial
           ref={materialRef}
           color={color}
-          size={(mobile ? 0.1 : 0.2) * size}
+          size={(mobile ? 0.08 : 0.15) * size * (hasChinese ? 0.8 : 1)}
           transparent
           opacity={0}
           sizeAttenuation

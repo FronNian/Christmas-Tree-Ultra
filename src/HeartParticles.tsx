@@ -741,6 +741,9 @@ const seededRandom = (seed: number) => {
   return x - Math.floor(x);
 };
 
+// 检测是否包含中文
+const containsChineseChar = (text: string) => /[\u4e00-\u9fa5]/.test(text);
+
 // 使用 Canvas 渲染文字并提取像素点位置（用于底部文字）
 const generateBottomTextPositions = (
   text: string, 
@@ -772,15 +775,22 @@ const generateBottomTextPositions = (
     return targets;
   }
   
-  const fontSize = isMobileDevice ? 40 : 60;
-  const fontFamily = '"Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", sans-serif';
+  const hasChinese = containsChineseChar(text);
+  // 中文使用更大的字体以获得更多像素点
+  const fontSize = isMobileDevice 
+    ? (hasChinese ? 80 : 40) 
+    : (hasChinese ? 120 : 60);
+  // 中文优先使用中文字体
+  const fontFamily = hasChinese
+    ? '"Microsoft YaHei", "PingFang SC", "Noto Sans SC", "SimHei", sans-serif'
+    : 'Arial, "Microsoft YaHei", sans-serif';
   
   ctx.font = `bold ${fontSize}px ${fontFamily}`;
   const metrics = ctx.measureText(text);
   const textWidth = metrics.width;
   const textHeight = fontSize * 1.2;
   
-  const padding = 10;
+  const padding = 20;
   canvas.width = Math.ceil(textWidth + padding * 2);
   canvas.height = Math.ceil(textHeight + padding * 2);
   
@@ -794,15 +804,18 @@ const generateBottomTextPositions = (
   const pixels = imageData.data;
   
   const basePositions: { x: number; y: number }[] = [];
-  const sampleStep = isMobileDevice ? 3 : 2;
+  // 中文需要更密集的采样（步长越小越密集）
+  const sampleStep = isMobileDevice ? (hasChinese ? 1 : 2) : (hasChinese ? 1 : 2);
+  // 中文使用更小的空间缩放，让文字更紧凑清晰
+  const spaceScale = scale * (hasChinese ? 0.05 : 0.08);
   
   for (let y = 0; y < canvas.height; y += sampleStep) {
     for (let x = 0; x < canvas.width; x += sampleStep) {
       const idx = (y * canvas.width + x) * 4;
       const alpha = pixels[idx + 3];
-      if (alpha > 128) {
-        const posX = (x - canvas.width / 2) * scale * 0.08;
-        const posY = (canvas.height / 2 - y) * scale * 0.08 + yOffset;
+      if (alpha > 100) {
+        const posX = (x - canvas.width / 2) * spaceScale;
+        const posY = (canvas.height / 2 - y) * spaceScale + yOffset;
         basePositions.push({ x: posX, y: posY });
       }
     }
@@ -822,9 +835,10 @@ const generateBottomTextPositions = (
     const baseIdx = Math.floor(seededRandom(seed * 1.1) * basePositions.length);
     const base = basePositions[baseIdx];
     
-    const offsetX = (seededRandom(seed * 2.2) - 0.5) * scale * 0.1;
-    const offsetY = (seededRandom(seed * 3.3) - 0.5) * scale * 0.1;
-    const offsetZ = (seededRandom(seed * 4.4) - 0.5) * 0.2;
+    // 几乎不添加偏移，让粒子紧贴文字轨迹
+    const offsetX = (seededRandom(seed * 2.2) - 0.5) * 0.02;
+    const offsetY = (seededRandom(seed * 3.3) - 0.5) * 0.02;
+    const offsetZ = (seededRandom(seed * 4.4) - 0.5) * 0.05;
     
     targets[i * 3] = base.x + offsetX;
     targets[i * 3 + 1] = base.y + offsetY;
@@ -853,7 +867,9 @@ const BottomTextParticles = ({
   const lastTextRef = useRef(text);
   const mobile = isMobile();
   
-  const count = 1000;
+  // 中文需要更多粒子才能显示清晰
+  const hasChinese = containsChineseChar(text);
+  const count = hasChinese ? 2500 : 1000;
   
   const particleSeeds = useMemo(() => {
     const arr = new Float32Array(count);
@@ -929,6 +945,11 @@ const BottomTextParticles = ({
   
   if (!text) return null;
   
+  // 中文使用更小的粒子，让笔画更清晰
+  const particleSize = hasChinese 
+    ? (mobile ? 0.06 : 0.1) 
+    : (mobile ? 0.1 : 0.18);
+  
   return (
     <points ref={pointsRef} position={[0, 0, 0.3]}>
       <bufferGeometry>
@@ -937,7 +958,7 @@ const BottomTextParticles = ({
       <pointsMaterial
         ref={materialRef}
         color={color}
-        size={(mobile ? 0.1 : 0.18) * size}
+        size={particleSize * size}
         transparent
         opacity={0}
         sizeAttenuation
