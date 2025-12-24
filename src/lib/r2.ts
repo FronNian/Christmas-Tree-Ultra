@@ -29,6 +29,7 @@ export interface ShareData {
   updatedAt: number;
   expiresAt: number;
   voiceUrls?: string[];  // 语音祝福音频 Base64 数据列表
+  customMusicUrl?: string; // 自定义音乐 Base64 数据
 }
 
 const MAX_SHARE_SIZE_MB = 50;
@@ -172,8 +173,8 @@ export const uploadShare = async (
     const now = Date.now();
     const expiresAt = now + 7 * 24 * 60 * 60 * 1000; // 7天后过期
 
-    // 提取语音数据
-    const { voiceUrls, cleanConfig } = extractVoiceDataFromConfig(config);
+    // 提取语音数据和自定义音乐
+    const { voiceUrls, customMusicUrl, cleanConfig } = extractVoiceDataFromConfig(config);
 
     const shareData: ShareData = {
       id: shareId,
@@ -184,7 +185,8 @@ export const uploadShare = async (
       createdAt: now,
       updatedAt: now,
       expiresAt,
-      voiceUrls: voiceUrls.length > 0 ? voiceUrls : undefined
+      voiceUrls: voiceUrls.length > 0 ? voiceUrls : undefined,
+      customMusicUrl
     };
 
     // 前端体积保护，避免超过后端限制
@@ -284,8 +286,8 @@ export const updateShare = async (
 
     const now = Date.now();
     
-    // 提取语音数据
-    const { voiceUrls, cleanConfig } = extractVoiceDataFromConfig(config);
+    // 提取语音数据和自定义音乐
+    const { voiceUrls, customMusicUrl, cleanConfig } = extractVoiceDataFromConfig(config);
     
     const updatedData: ShareData = {
       ...existing,
@@ -293,7 +295,8 @@ export const updateShare = async (
       config: cleanConfig,
       message,
       updatedAt: now,
-      voiceUrls: voiceUrls.length > 0 ? voiceUrls : undefined
+      voiceUrls: voiceUrls.length > 0 ? voiceUrls : undefined,
+      customMusicUrl
     };
 
     const sizeMB = getShareSizeMB(updatedData);
@@ -368,10 +371,8 @@ export const getShare = async (shareId: string): Promise<ShareData | null> => {
       return null;
     }
 
-    // 还原语音数据到配置中
-    if (data.voiceUrls && data.voiceUrls.length > 0) {
-      data.config = restoreVoiceDataToConfig(data.config, data.voiceUrls);
-    }
+    // 还原语音数据和自定义音乐到配置中
+    data.config = restoreVoiceDataToConfig(data.config, data.voiceUrls, data.customMusicUrl);
 
     return data;
   } catch (error) {
@@ -772,14 +773,16 @@ export const base64ToAudioBlob = (base64: string): Blob => {
 };
 
 /**
- * 从配置中提取语音数据
- * 返回 voiceUrls 数组和清理后的配置（移除 audioData）
+ * 从配置中提取语音数据和自定义音乐
+ * 返回 voiceUrls 数组、customMusicUrl 和清理后的配置
  */
 export const extractVoiceDataFromConfig = (config: Record<string, unknown>): {
   voiceUrls: string[];
+  customMusicUrl?: string;
   cleanConfig: Record<string, unknown>;
 } => {
   const voiceUrls: string[] = [];
+  let customMusicUrl: string | undefined;
   const cleanConfig = JSON.parse(JSON.stringify(config)); // 深拷贝
   
   // 检查 timeline.steps 中的 voice 步骤
@@ -796,32 +799,49 @@ export const extractVoiceDataFromConfig = (config: Record<string, unknown>): {
     });
   }
   
-  return { voiceUrls, cleanConfig };
+  // 提取自定义音乐 base64 数据
+  const music = cleanConfig.music as { selected?: string; customUrl?: string } | undefined;
+  if (music?.selected === 'custom' && music.customUrl?.startsWith('data:audio/')) {
+    customMusicUrl = music.customUrl;
+    // 从配置中移除 customUrl，使用特殊标记
+    music.customUrl = 'music:custom';
+  }
+  
+  return { voiceUrls, customMusicUrl, cleanConfig };
 };
 
 /**
- * 将语音数据还原到配置中
+ * 将语音数据和自定义音乐还原到配置中
  */
 export const restoreVoiceDataToConfig = (
   config: Record<string, unknown>,
-  voiceUrls?: string[]
+  voiceUrls?: string[],
+  customMusicUrl?: string
 ): Record<string, unknown> => {
-  if (!voiceUrls || voiceUrls.length === 0) return config;
-  
   const restoredConfig = JSON.parse(JSON.stringify(config)); // 深拷贝
   
-  // 检查 timeline.steps 中的 voice 步骤
-  const timeline = restoredConfig.timeline as { steps?: Array<{ type: string; audioData?: string; audioUrl?: string }> } | undefined;
-  if (timeline?.steps) {
-    timeline.steps.forEach((step) => {
-      if (step.type === 'voice' && step.audioUrl?.startsWith('voice:')) {
-        const voiceIndex = parseInt(step.audioUrl.split(':')[1], 10);
-        if (voiceUrls[voiceIndex]) {
-          step.audioData = voiceUrls[voiceIndex];
-          delete step.audioUrl;
+  // 还原语音数据
+  if (voiceUrls && voiceUrls.length > 0) {
+    const timeline = restoredConfig.timeline as { steps?: Array<{ type: string; audioData?: string; audioUrl?: string }> } | undefined;
+    if (timeline?.steps) {
+      timeline.steps.forEach((step) => {
+        if (step.type === 'voice' && step.audioUrl?.startsWith('voice:')) {
+          const voiceIndex = parseInt(step.audioUrl.split(':')[1], 10);
+          if (voiceUrls[voiceIndex]) {
+            step.audioData = voiceUrls[voiceIndex];
+            delete step.audioUrl;
+          }
         }
-      }
-    });
+      });
+    }
+  }
+  
+  // 还原自定义音乐
+  if (customMusicUrl) {
+    const music = restoredConfig.music as { selected?: string; customUrl?: string } | undefined;
+    if (music?.customUrl === 'music:custom') {
+      music.customUrl = customMusicUrl;
+    }
   }
   
   return restoredConfig;

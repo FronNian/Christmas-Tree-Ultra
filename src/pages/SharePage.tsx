@@ -746,8 +746,29 @@ export default function SharePage({ shareId }: SharePageProps) {
     // 如果已有音频实例，更新它
     if (audioRef.current) {
       const currentSrc = audioRef.current.src;
-      // 检查是否需要更换音乐源
-      const needsReload = !currentSrc.includes(musicUrl.split('/').pop() || '');
+      
+      // 标准化 URL 进行比较
+      const normalizeUrl = (url: string) => {
+        // data URL 使用长度 + 前200字符作为唯一标识
+        if (url.startsWith('data:')) {
+          return `data:${url.length}:${url.substring(0, 200)}`;
+        }
+        // 普通 URL 移除查询参数和哈希
+        try {
+          const urlObj = new URL(url, window.location.href);
+          return urlObj.pathname;
+        } catch {
+          return url;
+        }
+      };
+      
+      const currentNormalized = normalizeUrl(currentSrc);
+      const newNormalized = normalizeUrl(musicUrl);
+      
+      // 特殊处理：如果新 URL 是 data URL 且当前不是，强制重新加载
+      const isNewDataUrl = musicUrl.startsWith('data:');
+      const isCurrentDataUrl = currentSrc.startsWith('data:');
+      const needsReload = currentNormalized !== newNormalized || (isNewDataUrl && !isCurrentDataUrl);
       
       if (needsReload) {
         // 停止旧的更新循环

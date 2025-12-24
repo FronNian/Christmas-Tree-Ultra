@@ -824,9 +824,10 @@ export default function GrandTreeApp() {
     
     // 标准化 URL 进行比较
     const normalizeUrl = (url: string) => {
-      // data URL 直接返回前100个字符作为标识（避免比较整个 base64）
+      // data URL 使用哈希来标识（更可靠）
       if (url.startsWith('data:')) {
-        return url.substring(0, 100);
+        // 使用 data URL 的前200个字符 + 长度作为唯一标识
+        return `data:${url.length}:${url.substring(0, 200)}`;
       }
       // 普通 URL 移除查询参数和哈希
       try {
@@ -839,12 +840,18 @@ export default function GrandTreeApp() {
     
     const currentNormalized = normalizeUrl(currentSrc);
     const newNormalized = normalizeUrl(musicUrl);
-    const needsReload = currentNormalized !== newNormalized;
+    
+    // 特殊处理：如果新 URL 是 data URL 且当前不是，强制重新加载
+    const isNewDataUrl = musicUrl.startsWith('data:');
+    const isCurrentDataUrl = currentSrc.startsWith('data:');
+    const needsReload = currentNormalized !== newNormalized || (isNewDataUrl && !isCurrentDataUrl);
     
     console.log('Music change check:', { 
       selected: sceneConfig.music?.selected,
       hasCustomUrl: !!sceneConfig.music?.customUrl,
-      needsReload 
+      needsReload,
+      isNewDataUrl,
+      musicUrlPreview: musicUrl.substring(0, 80)
     });
     
     if (needsReload) {
@@ -883,14 +890,28 @@ export default function GrandTreeApp() {
           if (audioAnalyserRef.current) {
             audioLevelUpdateStopRef.current = startAudioLevelUpdate(audioAnalyserRef.current, audioLevelRef);
           }
-          if (wasPlaying) {
-            newAudio.play().catch((e) => console.warn('Auto-play failed:', e));
+          // 自定义音乐上传后自动播放，或者之前正在播放则继续
+          if (wasPlaying || isNewDataUrl) {
+            newAudio.play()
+              .then(() => setMusicPlaying(true))
+              .catch((e) => {
+                console.warn('Auto-play failed:', e);
+                setMusicPlaying(false);
+              });
           }
         }
         newAudio.removeEventListener('canplaythrough', handleCanPlay);
       };
       
       newAudio.addEventListener('canplaythrough', handleCanPlay);
+      
+      // 移动端备用：canplay 事件可能比 canplaythrough 更早触发
+      newAudio.addEventListener('canplay', () => {
+        // 如果 canplaythrough 还没触发，尝试用 canplay
+        if (audioRef.current === newAudio && newAudio.readyState >= 3) {
+          handleCanPlay();
+        }
+      }, { once: true });
       
       // 处理加载错误
       newAudio.addEventListener('error', (e) => {
