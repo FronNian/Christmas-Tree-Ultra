@@ -79,8 +79,8 @@ function validateShareData(data) {
   if (data.photos) {
     if (!Array.isArray(data.photos)) {
       errors.push('Photos must be an array');
-    } else if (data.photos.length > 20) {
-      errors.push('Too many photos (max 20)');
+    } else if (data.photos.length > 100) {
+      errors.push('Too many photos (max 100)');
     } else {
       for (let i = 0; i < data.photos.length; i++) {
         const photo = data.photos[i];
