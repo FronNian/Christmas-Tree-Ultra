@@ -7,6 +7,30 @@ export interface AudioAnalyser {
   dispose: () => void;
 }
 
+// 缓存已创建的 MediaElementSourceNode，避免重复创建导致音频无法播放
+// 关键：createMediaElementSource 对同一个 audio 元素只能调用一次！
+const audioSourceCache = new WeakMap<HTMLAudioElement, {
+  context: AudioContext;
+  source: MediaElementAudioSourceNode;
+}>();
+
+/**
+ * 清除音频元素的缓存（在更换音频源前调用）
+ */
+export function clearAudioCache(audioElement: HTMLAudioElement): void {
+  const cached = audioSourceCache.get(audioElement);
+  if (cached) {
+    try {
+      if (cached.context.state !== 'closed') {
+        cached.context.close().catch(() => {});
+      }
+    } catch {
+      // 忽略错误
+    }
+    audioSourceCache.delete(audioElement);
+  }
+}
+
 /**
  * 创建音频分析器
  * @param audioElement HTMLAudioElement
@@ -14,43 +38,62 @@ export interface AudioAnalyser {
  */
 export function createAudioAnalyser(audioElement: HTMLAudioElement): AudioAnalyser | null {
   try {
-    const audioContext = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
-    const analyser = audioContext.createAnalyser();
-    const source = audioContext.createMediaElementSource(audioElement);
+    let audioContext: AudioContext;
+    let source: MediaElementAudioSourceNode;
     
+    // 检查是否已有缓存的 source
+    const cached = audioSourceCache.get(audioElement);
+    if (cached && cached.context.state !== 'closed') {
+      audioContext = cached.context;
+      source = cached.source;
+    } else {
+      // 创建新的 AudioContext 和 source
+      audioContext = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
+      source = audioContext.createMediaElementSource(audioElement);
+      
+      // 缓存起来
+      audioSourceCache.set(audioElement, { context: audioContext, source });
+      
+      // source 必须连接到 destination 才能听到声音
+      source.connect(audioContext.destination);
+    }
+    
+    // 创建分析器节点
+    const analyser = audioContext.createAnalyser();
     analyser.fftSize = 256;
     analyser.smoothingTimeConstant = 0.8;
     
+    // 将 source 连接到分析器（可以多次连接到不同节点）
     source.connect(analyser);
-    analyser.connect(audioContext.destination);
     
     const bufferLength = analyser.frequencyBinCount;
     const dataArray = new Uint8Array(bufferLength);
     
     // 计算 RMS (Root Mean Square) 能量值
     const getLevel = (): number => {
-      analyser.getByteFrequencyData(dataArray);
-      
-      // 计算低频段能量（0-64，约 0-8kHz）
-      let sum = 0;
-      const lowFreqEnd = Math.floor(bufferLength * 0.25); // 前 25% 的频率
-      for (let i = 0; i < lowFreqEnd; i++) {
-        sum += dataArray[i] * dataArray[i];
+      try {
+        analyser.getByteFrequencyData(dataArray);
+        
+        // 计算低频段能量（0-64，约 0-8kHz）
+        let sum = 0;
+        const lowFreqEnd = Math.floor(bufferLength * 0.25); // 前 25% 的频率
+        for (let i = 0; i < lowFreqEnd; i++) {
+          sum += dataArray[i] * dataArray[i];
+        }
+        
+        // RMS 归一化到 0-1
+        const rms = Math.sqrt(sum / lowFreqEnd) / 255;
+        return Math.min(1, Math.max(0, rms));
+      } catch {
+        return 0;
       }
-      
-      // RMS 归一化到 0-1
-      const rms = Math.sqrt(sum / lowFreqEnd) / 255;
-      return Math.min(1, Math.max(0, rms));
     };
     
     const dispose = () => {
       try {
-        source.disconnect();
+        // 只断开分析器，不关闭 context 和 source（它们被缓存复用）
         analyser.disconnect();
-        if (audioContext.state !== 'closed') {
-          audioContext.close().catch(() => {});
-        }
-      } catch (e) {
+      } catch {
         // 忽略清理错误
       }
     };

@@ -6,7 +6,7 @@ import { CHRISTMAS_MUSIC_URL } from '../config';
 import { THEME_PRESETS } from '../config/themes';
 import { isMobile, isTablet, getDefaultSceneConfig, toggleFullscreen, isFullscreen, isFullscreenSupported, enterFullscreen, lockLandscape } from '../utils/helpers';
 import { sanitizeShareConfig, sanitizePhotos, sanitizeText } from '../utils/sanitize';
-import { createAudioAnalyser, startAudioLevelUpdate } from '../utils/audioAnalysis';
+import { createAudioAnalyser, startAudioLevelUpdate, clearAudioCache } from '../utils/audioAnalysis';
 import { getShare } from '../lib/r2';
 import type { ShareData } from '../lib/r2';
 import type { SceneState, SceneConfig, PhotoScreenPosition } from '../types';
@@ -698,9 +698,17 @@ export default function SharePage({ shareId }: SharePageProps) {
           audioAnalyserRef.current = null;
         }
         
-        audioRef.current.src = musicUrl;
-        audioRef.current.currentTime = 0;
-        audioRef.current.load(); // 强制重新加载音频
+        // 清理旧的音频缓存并创建新的 Audio 元素
+        const oldAudio = audioRef.current;
+        clearAudioCache(oldAudio);
+        oldAudio.pause();
+        oldAudio.src = '';
+        
+        // 创建新的 Audio 元素
+        const newAudio = new Audio(musicUrl);
+        newAudio.loop = true;
+        newAudio.volume = volume;
+        audioRef.current = newAudio;
         
         // 等待音频加载完成后再创建分析器
         const handleLoadedData = () => {
@@ -710,15 +718,21 @@ export default function SharePage({ shareId }: SharePageProps) {
               audioLevelUpdateStopRef.current = startAudioLevelUpdate(audioAnalyserRef.current, audioLevelRef);
             }
           }
-          audioRef.current?.removeEventListener('loadeddata', handleLoadedData);
+          newAudio.removeEventListener('loadeddata', handleLoadedData);
         };
         
-        audioRef.current.addEventListener('loadeddata', handleLoadedData);
+        newAudio.addEventListener('loadeddata', handleLoadedData);
         
         // 如果音频已经加载完成，立即创建分析器
-        if (audioRef.current.readyState >= 2) {
+        if (newAudio.readyState >= 2) {
           handleLoadedData();
         }
+        
+        // 自动播放
+        if (!showTutorial && !showSoundPrompt) {
+          newAudio.play().catch(() => setMusicPlaying(false));
+        }
+        return;
       }
       
       audioRef.current.volume = volume;
@@ -814,6 +828,7 @@ export default function SharePage({ shareId }: SharePageProps) {
     
     const timelineMusic = sceneConfig.timeline?.music;
     const isPlaying = timeline.state.isPlaying;
+    const volume = sceneConfig.music?.volume ?? 0.5;
     
     if (isPlaying && timelineMusic) {
       // 保存当前音乐ID，开始播放时间轴音乐
@@ -836,9 +851,18 @@ export default function SharePage({ shareId }: SharePageProps) {
         }
         
         const wasPlaying = !audioRef.current.paused;
-        audioRef.current.src = preset.url;
-        audioRef.current.currentTime = 0;
-        audioRef.current.load();
+        
+        // 清理旧的音频缓存并创建新的 Audio 元素
+        const oldAudio = audioRef.current;
+        clearAudioCache(oldAudio);
+        oldAudio.pause();
+        oldAudio.src = '';
+        
+        // 创建新的 Audio 元素
+        const newAudio = new Audio(preset.url);
+        newAudio.loop = true;
+        newAudio.volume = volume;
+        audioRef.current = newAudio;
         
         // 等待音频加载完成后再创建分析器
         const handleLoadedData = () => {
@@ -848,18 +872,18 @@ export default function SharePage({ shareId }: SharePageProps) {
               audioLevelUpdateStopRef.current = startAudioLevelUpdate(audioAnalyserRef.current, audioLevelRef);
             }
           }
-          audioRef.current?.removeEventListener('loadeddata', handleLoadedData);
+          newAudio.removeEventListener('loadeddata', handleLoadedData);
         };
         
-        audioRef.current.addEventListener('loadeddata', handleLoadedData);
+        newAudio.addEventListener('loadeddata', handleLoadedData);
         
         // 如果音频已经加载完成，立即创建分析器
-        if (audioRef.current.readyState >= 2) {
+        if (newAudio.readyState >= 2) {
           handleLoadedData();
         }
         
         if (wasPlaying) {
-          audioRef.current.play().catch(() => {});
+          newAudio.play().catch(() => {});
         }
       }
     } else if (!isPlaying && previousMusicRef.current !== null) {
@@ -878,9 +902,18 @@ export default function SharePage({ shareId }: SharePageProps) {
       
       const wasPlaying = !audioRef.current.paused;
       const originalMusicUrl = getMusicUrl(); // 使用配置的音乐
-      audioRef.current.src = originalMusicUrl;
-      audioRef.current.currentTime = 0;
-      audioRef.current.load();
+      
+      // 清理旧的音频缓存并创建新的 Audio 元素
+      const oldAudio = audioRef.current;
+      clearAudioCache(oldAudio);
+      oldAudio.pause();
+      oldAudio.src = '';
+      
+      // 创建新的 Audio 元素
+      const newAudio = new Audio(originalMusicUrl);
+      newAudio.loop = true;
+      newAudio.volume = volume;
+      audioRef.current = newAudio;
       
       // 等待音频加载完成后再创建分析器
       const handleLoadedData = () => {
@@ -890,18 +923,18 @@ export default function SharePage({ shareId }: SharePageProps) {
             audioLevelUpdateStopRef.current = startAudioLevelUpdate(audioAnalyserRef.current, audioLevelRef);
           }
         }
-        audioRef.current?.removeEventListener('loadeddata', handleLoadedData);
+        newAudio.removeEventListener('loadeddata', handleLoadedData);
       };
       
-      audioRef.current.addEventListener('loadeddata', handleLoadedData);
+      newAudio.addEventListener('loadeddata', handleLoadedData);
       
       // 如果音频已经加载完成，立即创建分析器
-      if (audioRef.current.readyState >= 2) {
+      if (newAudio.readyState >= 2) {
         handleLoadedData();
       }
       
       if (wasPlaying) {
-        audioRef.current.play().catch(() => {});
+        newAudio.play().catch(() => {});
       }
       previousMusicRef.current = null;
     }

@@ -6,7 +6,7 @@ import { Experience, GestureController, SettingsPanel, TitleOverlay, Modal, Lyri
 import { CHRISTMAS_MUSIC_URL } from './config';
 import { THEME_PRESETS, type ThemeKey } from './config/themes';
 import { isMobile, isTablet, fileToBase64, getDefaultSceneConfig, toggleFullscreen, isFullscreen, isFullscreenSupported } from './utils/helpers';
-import { createAudioAnalyser, startAudioLevelUpdate } from './utils/audioAnalysis';
+import { createAudioAnalyser, startAudioLevelUpdate, clearAudioCache } from './utils/audioAnalysis';
 import { useTimeline } from './hooks/useTimeline';
 import { 
   uploadShare, getLocalShare, getShareUrl, updateShare, getShare,
@@ -799,6 +799,7 @@ export default function GrandTreeApp() {
     
     const musicUrl = getMusicUrl();
     const wasPlaying = !audioRef.current.paused;
+    const volume = sceneConfig.music?.volume ?? 0.5;
     
     // 检查是否需要切换音乐源
     const currentSrc = audioRef.current.src;
@@ -829,9 +830,18 @@ export default function GrandTreeApp() {
         audioAnalyserRef.current = null;
       }
       
-      audioRef.current.src = musicUrl;
-      audioRef.current.currentTime = 0;
-      audioRef.current.load(); // 强制重新加载音频
+      // 清理旧的音频缓存并创建新的 Audio 元素
+      // 这是因为 createMediaElementSource 只能对一个 audio 元素调用一次
+      const oldAudio = audioRef.current;
+      clearAudioCache(oldAudio);
+      oldAudio.pause();
+      oldAudio.src = '';
+      
+      // 创建新的 Audio 元素
+      const newAudio = new Audio(musicUrl);
+      newAudio.loop = true;
+      newAudio.volume = volume;
+      audioRef.current = newAudio;
       
       // 等待音频加载完成后再创建分析器
       const handleLoadedData = () => {
@@ -841,21 +851,21 @@ export default function GrandTreeApp() {
             audioLevelUpdateStopRef.current = startAudioLevelUpdate(audioAnalyserRef.current, audioLevelRef);
           }
         }
-        audioRef.current?.removeEventListener('loadeddata', handleLoadedData);
+        newAudio.removeEventListener('loadeddata', handleLoadedData);
       };
       
-      audioRef.current.addEventListener('loadeddata', handleLoadedData);
+      newAudio.addEventListener('loadeddata', handleLoadedData);
       
       // 如果音频已经加载完成，立即创建分析器
-      if (audioRef.current.readyState >= 2) {
+      if (newAudio.readyState >= 2) {
         handleLoadedData();
       }
       
       if (wasPlaying) {
-        audioRef.current.play().catch(() => {});
+        newAudio.play().catch(() => {});
       }
     }
-  }, [sceneConfig.music?.selected, sceneConfig.music?.customUrl, getMusicUrl]);
+  }, [sceneConfig.music?.selected, sceneConfig.music?.customUrl, sceneConfig.music?.volume, getMusicUrl]);
 
   // 播放/暂停音乐
   const toggleMusic = useCallback(() => {
@@ -876,6 +886,7 @@ export default function GrandTreeApp() {
     
     const timelineMusic = sceneConfig.timeline?.music;
     const isPlaying = timeline.state.isPlaying;
+    const volume = sceneConfig.music?.volume ?? 0.5;
     
     if (isPlaying && timelineMusic) {
       // 保存当前音乐，开始播放时间轴音乐
@@ -884,7 +895,7 @@ export default function GrandTreeApp() {
       }
       
       const preset = PRESET_MUSIC.find(m => m.id === timelineMusic);
-      if (preset && audioRef.current.src !== preset.url) {
+      if (preset && !audioRef.current.src.includes(preset.url.split('/').pop() || '')) {
         // 停止旧的更新循环
         if (audioLevelUpdateStopRef.current) {
           audioLevelUpdateStopRef.current();
@@ -898,19 +909,38 @@ export default function GrandTreeApp() {
         }
         
         const wasPlaying = !audioRef.current.paused;
-        audioRef.current.src = preset.url;
-        audioRef.current.currentTime = 0;
         
-        // 重新创建分析器
-        if (audioRef.current) {
-          audioAnalyserRef.current = createAudioAnalyser(audioRef.current);
-          if (audioAnalyserRef.current) {
-            audioLevelUpdateStopRef.current = startAudioLevelUpdate(audioAnalyserRef.current, audioLevelRef);
+        // 清理旧的音频缓存并创建新的 Audio 元素
+        const oldAudio = audioRef.current;
+        clearAudioCache(oldAudio);
+        oldAudio.pause();
+        oldAudio.src = '';
+        
+        // 创建新的 Audio 元素
+        const newAudio = new Audio(preset.url);
+        newAudio.loop = true;
+        newAudio.volume = volume;
+        audioRef.current = newAudio;
+        
+        // 等待音频加载完成后再创建分析器
+        const handleLoadedData = () => {
+          if (audioRef.current) {
+            audioAnalyserRef.current = createAudioAnalyser(audioRef.current);
+            if (audioAnalyserRef.current) {
+              audioLevelUpdateStopRef.current = startAudioLevelUpdate(audioAnalyserRef.current, audioLevelRef);
+            }
           }
+          newAudio.removeEventListener('loadeddata', handleLoadedData);
+        };
+        
+        newAudio.addEventListener('loadeddata', handleLoadedData);
+        
+        if (newAudio.readyState >= 2) {
+          handleLoadedData();
         }
         
         if (wasPlaying) {
-          audioRef.current.play().catch(() => {});
+          newAudio.play().catch(() => {});
         }
       }
     } else if (!isPlaying && previousMusicRef.current !== null) {
@@ -930,24 +960,43 @@ export default function GrandTreeApp() {
         }
         
         const wasPlaying = !audioRef.current.paused;
-        audioRef.current.src = preset.url;
-        audioRef.current.currentTime = 0;
         
-        // 重新创建分析器
-        if (audioRef.current) {
-          audioAnalyserRef.current = createAudioAnalyser(audioRef.current);
-          if (audioAnalyserRef.current) {
-            audioLevelUpdateStopRef.current = startAudioLevelUpdate(audioAnalyserRef.current, audioLevelRef);
+        // 清理旧的音频缓存并创建新的 Audio 元素
+        const oldAudio = audioRef.current;
+        clearAudioCache(oldAudio);
+        oldAudio.pause();
+        oldAudio.src = '';
+        
+        // 创建新的 Audio 元素
+        const newAudio = new Audio(preset.url);
+        newAudio.loop = true;
+        newAudio.volume = volume;
+        audioRef.current = newAudio;
+        
+        // 等待音频加载完成后再创建分析器
+        const handleLoadedData = () => {
+          if (audioRef.current) {
+            audioAnalyserRef.current = createAudioAnalyser(audioRef.current);
+            if (audioAnalyserRef.current) {
+              audioLevelUpdateStopRef.current = startAudioLevelUpdate(audioAnalyserRef.current, audioLevelRef);
+            }
           }
+          newAudio.removeEventListener('loadeddata', handleLoadedData);
+        };
+        
+        newAudio.addEventListener('loadeddata', handleLoadedData);
+        
+        if (newAudio.readyState >= 2) {
+          handleLoadedData();
         }
         
         if (wasPlaying) {
-          audioRef.current.play().catch(() => {});
+          newAudio.play().catch(() => {});
         }
       }
       previousMusicRef.current = null;
     }
-  }, [timeline.state.isPlaying, sceneConfig.timeline?.music, sceneConfig.music?.selected]);
+  }, [timeline.state.isPlaying, sceneConfig.timeline?.music, sceneConfig.music?.selected, sceneConfig.music?.volume]);
 
   // 演示模式下的快捷键
   useEffect(() => {
