@@ -663,9 +663,11 @@ export default function SharePage({ shareId }: SharePageProps) {
     }
     
     if (selectedPhotoIndex !== null) {
+      // 已选中照片时，捏合取消选择
       setSelectedPhotoIndex(null);
     } else {
-      let closestIndex = 0;
+      // 未选中照片时，查找最近的照片
+      let closestIndex = -1;
       let closestDist = Infinity;
 
       photoScreenPositionsRef.current.forEach((photoPos) => {
@@ -680,16 +682,17 @@ export default function SharePage({ shareId }: SharePageProps) {
         }
       });
 
-      if (closestDist < 0.15) {
+      // 放宽距离阈值从 0.15 到 0.25，提高选中成功率
+      if (closestIndex >= 0 && closestDist < 0.25) {
         setSelectedPhotoIndex(closestIndex);
-        // 启动锁定，锁定1秒
+        // 启动锁定，锁定0.8秒（从1秒降低）
         setPhotoLocked(true);
         if (photoLockTimerRef.current) {
           clearTimeout(photoLockTimerRef.current);
         }
         photoLockTimerRef.current = setTimeout(() => {
           setPhotoLocked(false);
-        }, 1000); // 锁定1秒
+        }, 800);
       }
     }
   }, [selectedPhotoIndex, photoLocked]);

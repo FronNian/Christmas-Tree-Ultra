@@ -688,17 +688,17 @@ export default function GrandTreeApp() {
         }
       });
 
-      // 仅在距离足够近时选中，避免远距离抖动误触
-      if (closestIndex >= 0 && closestDist < 0.18) {
+      // 放宽距离阈值从 0.18 到 0.25，提高选中成功率
+      if (closestIndex >= 0 && closestDist < 0.25) {
         setSelectedPhotoIndex(closestIndex);
-        // 启动短锁定期，减少重复触发但保持流畅
+        // 启动短锁定期，从1秒降低到0.8秒
         setPhotoLocked(true);
         if (photoLockTimerRef.current) {
           clearTimeout(photoLockTimerRef.current);
         }
         photoLockTimerRef.current = setTimeout(() => {
           setPhotoLocked(false);
-        }, 1000); // 锁定1秒
+        }, 800);
       }
     }
   }, [selectedPhotoIndex, showHeart, photoLocked]);

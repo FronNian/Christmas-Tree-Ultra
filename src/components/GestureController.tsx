@@ -64,6 +64,7 @@ export const GestureController = ({
   });
   const pinchCooldownRef = useRef<number>(0);
   const pinchActiveRef = useRef<boolean>(false);
+  const lastPinchPosRef = useRef<{ x: number; y: number } | null>(null); // 上次捏合位置，用于防抖
   const lastFrameTimeRef = useRef<number>(0);
 
   // 旋转加速度
@@ -284,9 +285,9 @@ export const GestureController = ({
           // 1. 获取手指状态
           const fingers = getFingerState(landmarks, wrist);
           
-          // 2. 捏合检测
+          // 2. 捏合检测 - 放宽阈值提高识别率
           const pinchDist = Math.hypot(landmarks[4].x - landmarks[8].x, landmarks[4].y - landmarks[8].y);
-          const isPinch = pinchDist < 0.05; 
+          const isPinch = pinchDist < 0.08; // 从 0.05 放宽到 0.08 
 
           // 3. 手掌位置 & 移动 (平滑处理)
           // 计算当前帧的原始重心
@@ -437,12 +438,23 @@ export const GestureController = ({
           // 触发稳定手势
           if (isStable) {
             if (detectedGesture === 'Pinch') {
-              if (!pinchActiveRef.current && pinchCooldownRef.current <= 0) {
+              // 计算捏合位置（翻转 x 坐标以匹配屏幕坐标系，因为摄像头是镜像的）
+              const pinchX = 1 - (landmarks[4].x + landmarks[8].x) / 2;
+              const pinchY = (landmarks[4].y + landmarks[8].y) / 2;
+              
+              // 检查是否与上次捏合位置相近（防止同一位置重复触发）
+              const lastPos = lastPinchPosRef.current;
+              const posChanged = !lastPos || 
+                Math.abs(pinchX - lastPos.x) > 0.1 || 
+                Math.abs(pinchY - lastPos.y) > 0.1;
+              
+              if (!pinchActiveRef.current && pinchCooldownRef.current <= 0 && posChanged) {
                  pinchActiveRef.current = true;
-                 pinchCooldownRef.current = 0.5;
+                 pinchCooldownRef.current = 0.3; // 从 0.5 降低到 0.3 秒
+                 lastPinchPosRef.current = { x: pinchX, y: pinchY };
                  callbacksRef.current.onPinch?.({
-                   x: (landmarks[4].x + landmarks[8].x) / 2,
-                   y: (landmarks[4].y + landmarks[8].y) / 2
+                   x: pinchX,
+                   y: pinchY
                  });
               }
             } else {
@@ -454,6 +466,7 @@ export const GestureController = ({
             }
           } else if (detectedGesture === 'None') {
              pinchActiveRef.current = false;
+             lastPinchPosRef.current = null; // 手势消失时重置位置记录
           }
 
         } else {
