@@ -103,34 +103,53 @@ export const GestureController = ({
 
   /**
    * 核心算法：判断手指是否弯曲
-   * 严格模式：不仅看指尖距离，还看关节角度
+   * 放宽阈值以提高握拳识别率
    */
   const getFingerState = useCallback(
     (landmarks: NormalizedLandmark[], wrist: NormalizedLandmark) => {
       // 指尖索引: 拇指4, 食指8, 中指12, 无名指16, 小指20
       // 指根索引(MCP): 拇指2, 食指5, 中指9, 无名指13, 小指17
+      // PIP关节索引: 食指6, 中指10, 无名指14, 小指18
       
-      // 计算手指弯曲程度
-      const isCurled = (tipIdx: number, _pipIdx: number, mcpIdx: number) => {
+      // 计算手指弯曲程度 - 使用多重判定提高准确性
+      const isCurled = (tipIdx: number, pipIdx: number, mcpIdx: number) => {
         const tip = landmarks[tipIdx];
+        const pip = landmarks[pipIdx]; // PIP关节（第二关节）
         const mcp = landmarks[mcpIdx]; // 指根
         
         // 1. 指尖到手腕的距离
         const tipToWrist = Math.hypot(tip.x - wrist.x, tip.y - wrist.y);
         const mcpToWrist = Math.hypot(mcp.x - wrist.x, mcp.y - wrist.y);
         
-        // 2. 距离比判定
-        return tipToWrist < mcpToWrist * 1.3; 
+        // 2. 指尖到PIP的距离（弯曲时指尖靠近PIP）
+        const tipToPip = Math.hypot(tip.x - pip.x, tip.y - pip.y);
+        const mcpToPip = Math.hypot(mcp.x - pip.x, mcp.y - pip.y);
+        
+        // 3. 放宽距离比判定：从 1.3 放宽到 1.5
+        const distanceCheck = tipToWrist < mcpToWrist * 1.5;
+        
+        // 4. 额外检查：指尖是否靠近PIP（弯曲的手指指尖会靠近第二关节）
+        const bendCheck = tipToPip < mcpToPip * 1.2;
+        
+        // 满足任一条件即视为弯曲
+        return distanceCheck || bendCheck;
       };
 
-      // 拇指单独逻辑
+      // 拇指单独逻辑 - 放宽判定
       const thumbTip = landmarks[4];
+      const thumbIP = landmarks[3]; // 拇指IP关节
       const pinkyMCP = landmarks[17];
       const indexMCP = landmarks[5];
       
       const palmWidth = Math.hypot(indexMCP.x - pinkyMCP.x, indexMCP.y - pinkyMCP.y);
       const thumbOutDist = Math.hypot(thumbTip.x - pinkyMCP.x, thumbTip.y - pinkyMCP.y);
-      const thumbExtended = thumbOutDist > palmWidth * 1.2;
+      
+      // 拇指弯曲检测：指尖靠近IP关节
+      const thumbTipToIP = Math.hypot(thumbTip.x - thumbIP.x, thumbTip.y - thumbIP.y);
+      const thumbCurled = thumbTipToIP < palmWidth * 0.4;
+      
+      // 拇指伸直：从 1.2 放宽到 1.0，更容易判定为伸直
+      const thumbExtended = thumbOutDist > palmWidth * 1.0 && !thumbCurled;
 
       return {
         thumb: thumbExtended,
@@ -323,8 +342,9 @@ export const GestureController = ({
           } else if (extendedCount === 4 && fingers.thumb) {
              // 五指张开：所有手指都伸直
              detectedGesture = 'Open_Palm';
-          } else if (extendedCount === 0 && !fingers.thumb) {
-             // 握拳：所有手指都弯曲（包括拇指）
+          } else if (extendedCount <= 1 && !fingers.thumb) {
+             // 握拳：放宽条件，允许最多1根手指轻微伸出（从 === 0 改为 <= 1）
+             // 这样即使有一根手指没完全弯曲也能识别为握拳
              detectedGesture = 'Closed_Fist';
           } else if (extendedCount === 0 && fingers.thumb) {
              // 只有拇指伸直，其他手指弯曲 - 判断拇指方向
