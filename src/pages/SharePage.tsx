@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { Experience, GestureController, TitleOverlay, WelcomeTutorial, IntroOverlay, CenterPhoto, LyricsDisplay, GiftStepOverlay, VoicePlayer } from '../components';
 import { CHRISTMAS_MUSIC_URL } from '../config';
 import { THEME_PRESETS } from '../config/themes';
-import { isMobile, isTablet, getDefaultSceneConfig, toggleFullscreen, isFullscreen, isFullscreenSupported, enterFullscreen, lockLandscape } from '../utils/helpers';
+import { isMobile, isTablet, getDefaultSceneConfig, toggleFullscreen, isFullscreen, isFullscreenSupported, enterFullscreen, lockLandscape, getOptimalWebGLConfig } from '../utils/helpers';
 import { sanitizeShareConfig, sanitizePhotos, sanitizeText } from '../utils/sanitize';
 import { createAudioAnalyser, startAudioLevelUpdate, clearAudioCache } from '../utils/audioAnalysis';
 import { getShare } from '../lib/r2';
@@ -50,10 +50,28 @@ export default function SharePage({ shareId }: SharePageProps) {
   const [loadingStage, setLoadingStage] = useState<string>('正在连接服务器...');
   const [loadingProgress, setLoadingProgress] = useState(0);
   const [assetsReady, setAssetsReady] = useState(false);
+  const [musicReady, setMusicReady] = useState(false); // 音乐加载状态
   const [error, setError] = useState<string | null>(null);
   const [shareData, setShareData] = useState<ShareData | null>(null);
   const assetTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const photoScreenPositionsRef = useRef<PhotoScreenPosition[]>([]);
+
+  // WebGL 兼容性配置（只计算一次）
+  const glConfig = useMemo(() => {
+    const optimalConfig = getOptimalWebGLConfig();
+    return {
+      toneMapping: THREE.ReinhardToneMapping,
+      antialias: optimalConfig.antialias,
+      powerPreference: optimalConfig.powerPreference,
+      logarithmicDepthBuffer: optimalConfig.logarithmicDepthBuffer,
+      precision: optimalConfig.precision,
+      stencil: optimalConfig.stencil,
+      depth: optimalConfig.depth,
+      alpha: optimalConfig.alpha,
+      preserveDrawingBuffer: optimalConfig.preserveDrawingBuffer,
+      failIfMajorPerformanceCaveat: optimalConfig.failIfMajorPerformanceCaveat
+    };
+  }, []);
 
   // 场景状态
   const [sceneState, setSceneState] = useState<SceneState>('FORMED');
@@ -260,6 +278,48 @@ export default function SharePage({ shareId }: SharePageProps) {
         if (cfg.timeline?.enabled && cfg.timeline.steps && cfg.timeline.steps.length > 0) {
           setShowSoundPrompt(true);
         }
+        
+        // 预加载音乐
+        setLoadingStage('正在加载背景音乐...');
+        const musicConfig = cfg.music;
+        let musicUrl = CHRISTMAS_MUSIC_URL;
+        if (musicConfig) {
+          if (musicConfig.selected === 'custom' && musicConfig.customUrl) {
+            musicUrl = musicConfig.customUrl;
+          } else {
+            const preset = PRESET_MUSIC.find(m => m.id === musicConfig.selected);
+            if (preset) musicUrl = preset.url;
+          }
+        }
+        
+        // 创建音频元素并预加载
+        const preloadAudio = new Audio();
+        preloadAudio.preload = 'auto';
+        preloadAudio.src = musicUrl;
+        
+        // 设置音乐加载超时（5秒）
+        const musicTimeout = setTimeout(() => {
+          console.warn('Music preload timeout, continuing anyway');
+          setMusicReady(true);
+        }, 5000);
+        
+        preloadAudio.addEventListener('canplaythrough', () => {
+          clearTimeout(musicTimeout);
+          setLoadingProgress(95);
+          setMusicReady(true);
+        }, { once: true });
+        
+        preloadAudio.addEventListener('error', () => {
+          clearTimeout(musicTimeout);
+          console.warn('Music preload failed, continuing anyway');
+          setMusicReady(true);
+        }, { once: true });
+        
+        // 开始加载
+        preloadAudio.load();
+      } else {
+        // 没有配置，直接标记音乐准备好
+        setMusicReady(true);
       }
       
       setLoadingProgress(90);
@@ -280,13 +340,14 @@ export default function SharePage({ shareId }: SharePageProps) {
   // 场景资源加载完成后再结束加载遮罩，避免装饰迟延出现
   useEffect(() => {
     if (!loading) return;
-    if (assetsReady) {
+    // 需要场景资源和音乐都准备好
+    if (assetsReady && musicReady) {
       setLoadingProgress(100);
       setLoadingStage('加载完成！');
       const timer = setTimeout(() => setLoading(false), 300);
       return () => clearTimeout(timer);
     }
-  }, [assetsReady, loading]);
+  }, [assetsReady, musicReady, loading]);
 
   // 预加载文字效果的定时器
   useEffect(() => {
@@ -708,30 +769,34 @@ export default function SharePage({ shareId }: SharePageProps) {
         const newAudio = new Audio(musicUrl);
         newAudio.loop = true;
         newAudio.volume = volume;
+        newAudio.preload = 'auto';
         audioRef.current = newAudio;
         
-        // 等待音频加载完成后再创建分析器
-        const handleLoadedData = () => {
-          if (audioRef.current) {
-            audioAnalyserRef.current = createAudioAnalyser(audioRef.current);
+        // 等待音频可以播放后再创建分析器和播放
+        const handleCanPlay = () => {
+          if (audioRef.current === newAudio) {
+            // 创建分析器
+            audioAnalyserRef.current = createAudioAnalyser(newAudio);
             if (audioAnalyserRef.current) {
               audioLevelUpdateStopRef.current = startAudioLevelUpdate(audioAnalyserRef.current, audioLevelRef);
             }
+            // 自动播放
+            if (!showTutorial && !showSoundPrompt && musicPlaying) {
+              newAudio.play().catch(() => setMusicPlaying(false));
+            }
           }
-          newAudio.removeEventListener('loadeddata', handleLoadedData);
+          newAudio.removeEventListener('canplaythrough', handleCanPlay);
         };
         
-        newAudio.addEventListener('loadeddata', handleLoadedData);
+        newAudio.addEventListener('canplaythrough', handleCanPlay);
         
-        // 如果音频已经加载完成，立即创建分析器
-        if (newAudio.readyState >= 2) {
-          handleLoadedData();
+        // 如果音频已经可以播放，立即处理
+        if (newAudio.readyState >= 3) {
+          handleCanPlay();
         }
         
-        // 自动播放
-        if (!showTutorial && !showSoundPrompt) {
-          newAudio.play().catch(() => setMusicPlaying(false));
-        }
+        // 开始加载
+        newAudio.load();
         return;
       }
       
@@ -739,28 +804,45 @@ export default function SharePage({ shareId }: SharePageProps) {
       return;
     }
     
-    audioRef.current = new Audio(musicUrl);
-    audioRef.current.loop = true;
-    audioRef.current.volume = volume;
+    // 创建新的音频实例
+    const audio = new Audio(musicUrl);
+    audio.loop = true;
+    audio.volume = volume;
+    audio.preload = 'auto';
+    audioRef.current = audio;
 
-    // 创建音频分析器
-    if (audioRef.current) {
-      audioAnalyserRef.current = createAudioAnalyser(audioRef.current);
-      audioLevelUpdateStopRef.current = startAudioLevelUpdate(audioAnalyserRef.current, audioLevelRef);
+    // 等待音频可以播放后再创建分析器
+    const handleCanPlay = () => {
+      if (audioRef.current === audio) {
+        // 创建音频分析器
+        audioAnalyserRef.current = createAudioAnalyser(audio);
+        if (audioAnalyserRef.current) {
+          audioLevelUpdateStopRef.current = startAudioLevelUpdate(audioAnalyserRef.current, audioLevelRef);
+        }
+        
+        // 教程或音乐提示显示时不播放音乐
+        if (!showTutorial && !showSoundPrompt) {
+          audio.play().catch(() => setMusicPlaying(false));
+        }
+      }
+      audio.removeEventListener('canplaythrough', handleCanPlay);
+    };
+    
+    audio.addEventListener('canplaythrough', handleCanPlay);
+    
+    // 如果音频已经可以播放，立即处理
+    if (audio.readyState >= 3) {
+      handleCanPlay();
     }
+    
+    // 开始加载
+    audio.load();
 
-    // 教程或音乐提示显示时不播放音乐
-    if (!showTutorial && !showSoundPrompt) {
-      const playAudio = () => {
-        audioRef.current?.play().catch(() => setMusicPlaying(false));
-      };
-      playAudio();
-    }
-
+    // 用户交互后尝试播放（处理浏览器自动播放限制）
     const handleInteraction = () => {
       // 教程或音乐提示显示时不自动播放
       if (showTutorial || showSoundPrompt) return;
-      if (audioRef.current && audioRef.current.paused) {
+      if (audioRef.current && audioRef.current.paused && musicPlaying) {
         audioRef.current.play().then(() => setMusicPlaying(true)).catch(() => {});
       }
       document.removeEventListener('click', handleInteraction);
@@ -811,14 +893,53 @@ export default function SharePage({ shareId }: SharePageProps) {
 
   // 播放/暂停音乐
   const toggleMusic = useCallback(() => {
-    if (!audioRef.current) return;
+    if (!audioRef.current) {
+      // 如果音频实例不存在，尝试重新创建
+      const musicUrl = getMusicUrl();
+      const volume = sceneConfig.music?.volume ?? 0.5;
+      const audio = new Audio(musicUrl);
+      audio.loop = true;
+      audio.volume = volume;
+      audio.preload = 'auto';
+      audioRef.current = audio;
+      
+      audio.addEventListener('canplaythrough', () => {
+        audioAnalyserRef.current = createAudioAnalyser(audio);
+        if (audioAnalyserRef.current) {
+          audioLevelUpdateStopRef.current = startAudioLevelUpdate(audioAnalyserRef.current, audioLevelRef);
+        }
+        audio.play().then(() => setMusicPlaying(true)).catch(() => setMusicPlaying(false));
+      }, { once: true });
+      
+      audio.load();
+      return;
+    }
+    
     if (musicPlaying) {
       audioRef.current.pause();
+      setMusicPlaying(false);
     } else {
-      audioRef.current.play().catch(e => console.log('Audio play failed:', e));
+      // 确保音频已加载
+      if (audioRef.current.readyState >= 3) {
+        audioRef.current.play()
+          .then(() => setMusicPlaying(true))
+          .catch(e => {
+            console.log('Audio play failed:', e);
+            setMusicPlaying(false);
+          });
+      } else {
+        // 等待加载完成后播放
+        const handleCanPlay = () => {
+          audioRef.current?.play()
+            .then(() => setMusicPlaying(true))
+            .catch(() => setMusicPlaying(false));
+          audioRef.current?.removeEventListener('canplaythrough', handleCanPlay);
+        };
+        audioRef.current.addEventListener('canplaythrough', handleCanPlay);
+        audioRef.current.load();
+      }
     }
-    setMusicPlaying(!musicPlaying);
-  }, [musicPlaying]);
+  }, [musicPlaying, getMusicUrl, sceneConfig.music?.volume]);
 
   // 时间轴播放时切换音乐
   const previousMusicRef = useRef<string | null>(null);
@@ -1087,13 +1208,7 @@ export default function SharePage({ shareId }: SharePageProps) {
         <Canvas
           key={glResetKey}
           dpr={mobile ? 1 : isTablet() ? 1.5 : [1, 2]}
-          gl={{
-            toneMapping: THREE.ReinhardToneMapping,
-            antialias: !mobile,
-            powerPreference: mobile ? 'low-power' : 'high-performance',
-            logarithmicDepthBuffer: true,
-            precision: 'highp'
-          }}
+          gl={glConfig}
           shadows={false}
           frameloop={showTutorial ? 'never' : 'always'}
           onCreated={(state) => {

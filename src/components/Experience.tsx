@@ -5,7 +5,7 @@ import { OrbitControls, PerspectiveCamera, Stars, Sparkles, useProgress } from '
 import { EffectComposer, Bloom } from '@react-three/postprocessing';
 import * as THREE from 'three';
 import { CONFIG, DEFAULT_BELL_CONFIG, DEFAULT_SHOOTING_STARS_CONFIG, DEFAULT_AURORA_CONFIG, DEFAULT_FIREWORKS_CONFIG } from '../config';
-import { isMobile, isTablet } from '../utils/helpers';
+import { isMobile, getOptimalPostProcessingConfig } from '../utils/helpers';
 import type { SceneState, SceneConfig } from '../types';
 import {
   Foliage,
@@ -511,21 +511,28 @@ export const Experience = memo(({
         />
       )}
 
-      {safeConfig.bloom.enabled && (
-        <EffectComposer 
-          multisampling={0}
-          frameBufferType={isTablet() ? THREE.HalfFloatType : THREE.UnsignedByteType}
-        >
-          <Bloom 
-            luminanceThreshold={isTablet() ? 0.95 : 0.9} 
-            luminanceSmoothing={0.025} 
-            intensity={isTablet() ? safeConfig.bloom.intensity * 0.8 : safeConfig.bloom.intensity} 
-            radius={isTablet() ? 0.3 : 0.5}
-            mipmapBlur={!isTablet()}
-            levels={isTablet() ? 3 : 5}
-          />
-        </EffectComposer>
-      )}
+      {(() => {
+        // 使用兼容性检测获取最佳后期处理配置
+        const ppConfig = getOptimalPostProcessingConfig();
+        if (!safeConfig.bloom.enabled || !ppConfig.enabled || !ppConfig.bloomEnabled) {
+          return null;
+        }
+        return (
+          <EffectComposer 
+            multisampling={ppConfig.multisampling}
+            frameBufferType={ppConfig.useHalfFloat ? THREE.HalfFloatType : THREE.UnsignedByteType}
+          >
+            <Bloom 
+              luminanceThreshold={mobile ? 0.95 : 0.9} 
+              luminanceSmoothing={0.025} 
+              intensity={ppConfig.bloomIntensity * (safeConfig.bloom.intensity / 1.5)} 
+              radius={mobile ? 0.3 : 0.5}
+              mipmapBlur={ppConfig.mipmapBlur}
+              levels={ppConfig.bloomLevels}
+            />
+          </EffectComposer>
+        );
+      })()}
     </>
   );
 });

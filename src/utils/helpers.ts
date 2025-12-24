@@ -194,6 +194,264 @@ export const isTablet = (): boolean => {
     (window.innerWidth >= 768 && window.innerWidth <= 1024 && 'ontouchstart' in window);
 };
 
+// ============ WebGL 兼容性检测 ============
+
+export interface WebGLCapabilities {
+  webglSupported: boolean;
+  webgl2Supported: boolean;
+  maxTextureSize: number;
+  maxRenderbufferSize: number;
+  highpSupported: boolean;
+  floatTexturesSupported: boolean;
+  halfFloatSupported: boolean;
+  logarithmicDepthSupported: boolean;
+  antialiasSupported: boolean;
+  renderer: string;
+  vendor: string;
+  isLowEnd: boolean;
+}
+
+/**
+ * 检测 WebGL 能力和兼容性
+ * 用于在渲染前确定最佳配置
+ */
+export const getWebGLCapabilities = (): WebGLCapabilities => {
+  const defaultCaps: WebGLCapabilities = {
+    webglSupported: false,
+    webgl2Supported: false,
+    maxTextureSize: 2048,
+    maxRenderbufferSize: 2048,
+    highpSupported: false,
+    floatTexturesSupported: false,
+    halfFloatSupported: false,
+    logarithmicDepthSupported: false,
+    antialiasSupported: false,
+    renderer: 'unknown',
+    vendor: 'unknown',
+    isLowEnd: true
+  };
+
+  if (typeof window === 'undefined' || typeof document === 'undefined') {
+    return defaultCaps;
+  }
+
+  const canvas = document.createElement('canvas');
+  let gl: WebGLRenderingContext | WebGL2RenderingContext | null = null;
+  let isWebGL2 = false;
+
+  // 尝试获取 WebGL2 上下文
+  try {
+    gl = canvas.getContext('webgl2') as WebGL2RenderingContext | null;
+    if (gl) {
+      isWebGL2 = true;
+    }
+  } catch {
+    // WebGL2 不支持
+  }
+
+  // 回退到 WebGL1
+  if (!gl) {
+    try {
+      gl = canvas.getContext('webgl') as WebGLRenderingContext | null ||
+           canvas.getContext('experimental-webgl') as WebGLRenderingContext | null;
+    } catch {
+      return defaultCaps;
+    }
+  }
+
+  if (!gl) {
+    return defaultCaps;
+  }
+
+  // 获取渲染器信息
+  let renderer = 'unknown';
+  let vendor = 'unknown';
+  try {
+    const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+    if (debugInfo) {
+      renderer = gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL) || 'unknown';
+      vendor = gl.getParameter(debugInfo.UNMASKED_VENDOR_WEBGL) || 'unknown';
+    }
+  } catch {
+    // 忽略
+  }
+
+  // 检测高精度浮点支持
+  let highpSupported = false;
+  try {
+    const shaderPrecision = gl.getShaderPrecisionFormat(gl.FRAGMENT_SHADER, gl.HIGH_FLOAT);
+    highpSupported = shaderPrecision ? shaderPrecision.precision > 0 : false;
+  } catch {
+    highpSupported = false;
+  }
+
+  // 检测浮点纹理支持
+  const floatTexturesSupported = isWebGL2 || !!gl.getExtension('OES_texture_float');
+  
+  // 检测半精度浮点支持
+  const halfFloatSupported = isWebGL2 || !!gl.getExtension('OES_texture_half_float');
+
+  // 检测对数深度缓冲支持（WebGL2 原生支持，WebGL1 需要扩展）
+  const logarithmicDepthSupported = isWebGL2 || !!gl.getExtension('EXT_frag_depth');
+
+  // 获取最大纹理尺寸
+  const maxTextureSize = gl.getParameter(gl.MAX_TEXTURE_SIZE) || 2048;
+  const maxRenderbufferSize = gl.getParameter(gl.MAX_RENDERBUFFER_SIZE) || 2048;
+
+  // 检测抗锯齿支持
+  let antialiasSupported = false;
+  try {
+    const testCanvas = document.createElement('canvas');
+    const testGl = testCanvas.getContext('webgl', { antialias: true }) as WebGLRenderingContext | null ||
+                   testCanvas.getContext('experimental-webgl', { antialias: true }) as WebGLRenderingContext | null;
+    if (testGl) {
+      antialiasSupported = testGl.getContextAttributes()?.antialias || false;
+    }
+  } catch {
+    antialiasSupported = false;
+  }
+
+  // 判断是否为低端设备
+  const isLowEnd = detectLowEndDevice(renderer, vendor, maxTextureSize, isWebGL2);
+
+  // 清理
+  const loseContext = gl.getExtension('WEBGL_lose_context');
+  if (loseContext) {
+    loseContext.loseContext();
+  }
+
+  return {
+    webglSupported: true,
+    webgl2Supported: isWebGL2,
+    maxTextureSize,
+    maxRenderbufferSize,
+    highpSupported,
+    floatTexturesSupported,
+    halfFloatSupported,
+    logarithmicDepthSupported,
+    antialiasSupported,
+    renderer,
+    vendor,
+    isLowEnd
+  };
+};
+
+/**
+ * 检测是否为低端设备/浏览器
+ */
+function detectLowEndDevice(
+  renderer: string,
+  vendor: string,
+  maxTextureSize: number,
+  isWebGL2: boolean
+): boolean {
+  const rendererLower = renderer.toLowerCase();
+  const vendorLower = vendor.toLowerCase();
+
+  // 已知的低端 GPU 关键词
+  const lowEndKeywords = [
+    'mali-4', 'mali-t', 'mali-g5', // 老旧 Mali GPU
+    'adreno 3', 'adreno 4', 'adreno 5', // 老旧 Adreno GPU
+    'powervr sgx', // 老旧 PowerVR
+    'intel hd graphics 4', 'intel hd graphics 5', // 老旧 Intel 集显
+    'swiftshader', // 软件渲染
+    'llvmpipe', // 软件渲染
+    'microsoft basic render', // Windows 软件渲染
+    'angle', // 某些 ANGLE 实现可能性能较差
+  ];
+
+  // 检查是否匹配低端关键词
+  const isLowEndGPU = lowEndKeywords.some(keyword => 
+    rendererLower.includes(keyword) || vendorLower.includes(keyword)
+  );
+
+  // 纹理尺寸过小也表示低端
+  const hasSmallTextures = maxTextureSize < 4096;
+
+  // 不支持 WebGL2 的设备通常较老
+  const noWebGL2 = !isWebGL2;
+
+  // 综合判断
+  return isLowEndGPU || (hasSmallTextures && noWebGL2);
+}
+
+/**
+ * 获取适合当前设备的 WebGL 配置
+ */
+export const getOptimalWebGLConfig = (): {
+  antialias: boolean;
+  powerPreference: 'high-performance' | 'low-power' | 'default';
+  precision: 'highp' | 'mediump' | 'lowp';
+  logarithmicDepthBuffer: boolean;
+  stencil: boolean;
+  depth: boolean;
+  alpha: boolean;
+  preserveDrawingBuffer: boolean;
+  failIfMajorPerformanceCaveat: boolean;
+} => {
+  const caps = getWebGLCapabilities();
+  const mobile = isMobile();
+
+  return {
+    // 移动端和低端设备禁用抗锯齿
+    antialias: !mobile && !caps.isLowEnd && caps.antialiasSupported,
+    // 移动端使用低功耗模式
+    powerPreference: mobile ? 'low-power' : caps.isLowEnd ? 'default' : 'high-performance',
+    // 根据设备能力选择精度
+    precision: caps.highpSupported && !caps.isLowEnd ? 'highp' : 'mediump',
+    // 低端设备禁用对数深度缓冲
+    logarithmicDepthBuffer: caps.logarithmicDepthSupported && !caps.isLowEnd && !mobile,
+    stencil: false,
+    depth: true,
+    alpha: false,
+    // 截图功能需要 preserveDrawingBuffer，但会影响性能
+    preserveDrawingBuffer: true,
+    // 不要因为性能问题而失败，让用户至少能看到内容
+    failIfMajorPerformanceCaveat: false
+  };
+};
+
+/**
+ * 获取适合当前设备的后期处理配置
+ */
+export const getOptimalPostProcessingConfig = (): {
+  enabled: boolean;
+  multisampling: number;
+  useHalfFloat: boolean;
+  bloomEnabled: boolean;
+  bloomIntensity: number;
+  bloomLevels: number;
+  mipmapBlur: boolean;
+} => {
+  const caps = getWebGLCapabilities();
+  const mobile = isMobile();
+  const tablet = isTablet();
+
+  // 低端设备完全禁用后期处理
+  if (caps.isLowEnd) {
+    return {
+      enabled: false,
+      multisampling: 0,
+      useHalfFloat: false,
+      bloomEnabled: false,
+      bloomIntensity: 0,
+      bloomLevels: 0,
+      mipmapBlur: false
+    };
+  }
+
+  return {
+    enabled: true,
+    multisampling: 0, // 后期处理中禁用多重采样以提高兼容性
+    // 只有支持半精度浮点的设备才使用
+    useHalfFloat: caps.halfFloatSupported && !mobile,
+    bloomEnabled: true,
+    bloomIntensity: mobile ? 1.0 : tablet ? 1.2 : 1.5,
+    bloomLevels: mobile ? 3 : tablet ? 4 : 5,
+    mipmapBlur: !mobile && !tablet
+  };
+};
+
 // 生成树形位置（支持可选的种子随机参数和自定义尺寸）
 export const getTreePosition = (
   seed1?: number, 

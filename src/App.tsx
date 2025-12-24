@@ -5,7 +5,7 @@ import * as THREE from 'three';
 import { Experience, GestureController, SettingsPanel, TitleOverlay, Modal, LyricsDisplay, AvatarCropper, IntroOverlay, WelcomeTutorial, PrivacyNotice, CenterPhoto, GiftStepOverlay, VoicePlayer, KeyboardShortcuts, PhotoManager, LetterStepOverlay } from './components';
 import { CHRISTMAS_MUSIC_URL } from './config';
 import { THEME_PRESETS, type ThemeKey } from './config/themes';
-import { isMobile, isTablet, fileToBase64, getDefaultSceneConfig, toggleFullscreen, isFullscreen, isFullscreenSupported } from './utils/helpers';
+import { isMobile, isTablet, fileToBase64, getDefaultSceneConfig, toggleFullscreen, isFullscreen, isFullscreenSupported, getOptimalWebGLConfig } from './utils/helpers';
 import { createAudioAnalyser, startAudioLevelUpdate, clearAudioCache } from './utils/audioAnalysis';
 import { useTimeline } from './hooks/useTimeline';
 import { 
@@ -44,6 +44,23 @@ function deepMergeConfig<T extends Record<string, unknown>>(target: T, source: P
 export default function GrandTreeApp() {
   const mobile = isMobile();
   const isShareMode = false; // TODO: 后续添加路由支持
+
+  // WebGL 兼容性配置（只计算一次）
+  const glConfig = useMemo(() => {
+    const optimalConfig = getOptimalWebGLConfig();
+    return {
+      toneMapping: THREE.ReinhardToneMapping,
+      antialias: optimalConfig.antialias,
+      powerPreference: optimalConfig.powerPreference,
+      logarithmicDepthBuffer: optimalConfig.logarithmicDepthBuffer,
+      precision: optimalConfig.precision,
+      stencil: optimalConfig.stencil,
+      depth: optimalConfig.depth,
+      alpha: optimalConfig.alpha,
+      preserveDrawingBuffer: optimalConfig.preserveDrawingBuffer,
+      failIfMajorPerformanceCaveat: optimalConfig.failIfMajorPerformanceCaveat
+    };
+  }, []);
 
   // 场景状态
   const [sceneState, setSceneState] = useState<SceneState>('CHAOS');
@@ -1362,13 +1379,7 @@ export default function GrandTreeApp() {
         <Canvas
           key={refreshKey}
           dpr={mobile ? 1 : isTablet() ? 1.5 : [1, 2]}
-          gl={{
-            toneMapping: THREE.ReinhardToneMapping,
-            antialias: !mobile,
-            powerPreference: mobile ? 'low-power' : 'high-performance',
-            logarithmicDepthBuffer: true,  // 解决 Z-fighting 问题
-            precision: 'highp'
-          }}
+          gl={glConfig}
           shadows={false}
           frameloop="always"
           // GPU / 浏览器显存不足时，防止默认处理导致 React DOM 异常，手动重建 Canvas
