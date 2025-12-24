@@ -389,7 +389,6 @@ const UnifiedPhotoDisplay = ({
   const lastCarouselSwitchRef = useRef(0);
   const shrinkProgressRef = useRef(0);
   const wasVisibleRef = useRef(false);
-  const lastLoggedPhaseRef = useRef<PhotoDisplayPhase | null>(null);
   
   // 环绕参数
   const orbitRadius = isMobileDevice ? 8 : 12;
@@ -1209,7 +1208,7 @@ export const HeartParticles = ({
     }
   }, [visible]);
   
-  useFrame((state, delta) => {
+  useFrame((_state, delta) => {
     if (!pointsRef.current || !groupRef.current || !materialRef.current) return;
     
     // 更新动画时间（暂停时不更新）
