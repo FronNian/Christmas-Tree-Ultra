@@ -618,7 +618,7 @@ export const sanitizeShareConfig = (config: unknown): Record<string, unknown> =>
     
     // 验证步骤数组
     if (Array.isArray(t.steps)) {
-      const allowedTypes = ['intro', 'photo', 'heart', 'text', 'tree', 'gift', 'voice'];
+      const allowedTypes = ['intro', 'photo', 'heart', 'text', 'tree', 'gift', 'voice', 'letter'];
       const validSteps = t.steps
         .slice(0, 20) // 最多20个步骤
         .filter((step): step is Record<string, unknown> => 
@@ -692,6 +692,18 @@ export const sanitizeShareConfig = (config: unknown): Record<string, unknown> =>
                 voiceStep.audioData = step.audioData;
               }
               return voiceStep;
+            }
+            case 'letter': {
+              const letterStep: Record<string, unknown> = {
+                ...base,
+                content: sanitizeText(step.content, 2000) || '',  // 书信内容最多 2000 字
+                speed: sanitizeNumber(step.speed, 30, 500, 100),
+                fontSize: sanitizeNumber(step.fontSize, 14, 48, 24)
+              };
+              if (typeof step.color === 'string' && /^#[0-9A-Fa-f]{6}$/.test(step.color)) {
+                letterStep.color = step.color;
+              }
+              return letterStep;
             }
             case 'tree':
               return base;

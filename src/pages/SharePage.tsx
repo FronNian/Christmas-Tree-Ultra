@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { Canvas } from '@react-three/fiber';
 import * as THREE from 'three';
-import { Experience, GestureController, TitleOverlay, WelcomeTutorial, IntroOverlay, CenterPhoto, LyricsDisplay, GiftStepOverlay, VoicePlayer } from '../components';
+import { Experience, GestureController, TitleOverlay, WelcomeTutorial, IntroOverlay, CenterPhoto, LyricsDisplay, GiftStepOverlay, VoicePlayer, LetterStepOverlay } from '../components';
 import { CHRISTMAS_MUSIC_URL } from '../config';
 import { THEME_PRESETS } from '../config/themes';
 import { isMobile, isTablet, getDefaultSceneConfig, toggleFullscreen, isFullscreen, isFullscreenSupported, enterFullscreen, lockLandscape, getOptimalWebGLConfig } from '../utils/helpers';
@@ -1206,14 +1206,24 @@ export default function SharePage({ shareId }: SharePageProps) {
         onComplete={timeline.onVoiceComplete}
       />
 
-      {/* 3D Canvas - 教程显示时暂停渲染 */}
+      {/* 时间轴模式 - 书信步骤 */}
+      <LetterStepOverlay
+        visible={timeline.showLetter}
+        content={timeline.letterConfig?.content || ''}
+        speed={timeline.letterConfig?.speed}
+        fontSize={timeline.letterConfig?.fontSize}
+        color={timeline.letterConfig?.color}
+        onComplete={timeline.onLetterComplete}
+      />
+
+      {/* 3D Canvas - 教程或音乐提示显示时暂停渲染 */}
       <div style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0, zIndex: 1 }}>
         <Canvas
           key={glResetKey}
           dpr={mobile ? 1 : isTablet() ? 1.5 : [1, 2]}
           gl={glConfig}
           shadows={false}
-          frameloop={showTutorial ? 'never' : 'always'}
+          frameloop={(showTutorial || (showSoundPrompt && !soundPromptDismissed)) ? 'never' : 'always'}
           onCreated={(state) => {
             const canvas = state.gl.domElement;
             const handleLost = (event: Event) => handleWebglContextLost(event);
@@ -1528,7 +1538,7 @@ export default function SharePage({ shareId }: SharePageProps) {
           flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'center',
-          zIndex: 300,
+          zIndex: 10000,
           gap: '20px'
         }}>
           <div style={{

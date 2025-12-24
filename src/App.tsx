@@ -11,6 +11,7 @@ import { useTimeline } from './hooks/useTimeline';
 import { 
   uploadShare, getLocalShare, getShareUrl, updateShare, getShare,
   saveLocalConfig, getLocalConfig, saveLocalPhotos, getLocalPhotos,
+  saveLocalMusic, getLocalMusic,
   refreshShareExpiry, deleteShare, clearLocalShare
 } from './lib/r2';
 import type { SceneState, SceneConfig, GestureConfig, GestureAction, MusicConfig, PhotoScreenPosition } from './types';
@@ -1171,22 +1172,51 @@ export default function GrandTreeApp() {
     return () => document.removeEventListener('keydown', handleGlobalKeyDown);
   }, [mobile, showSettings, modalVisible, showTutorial, showPrivacy, showKeyboardHelp, showPhotoManager, demoMode, toggleMusic, triggerEffect, sceneConfig.timeline, canPlayTimeline, timeline.state.isPlaying, timeline.actions]);
 
-  // 加载本地保存的照片（配置已在 useState 初始化时加载）
+  // 加载本地保存的照片和自定义音乐（配置已在 useState 初始化时加载）
   useEffect(() => {
-    const loadPhotos = async () => {
+    const loadLocalData = async () => {
+      // 加载照片
       const savedPhotos = await getLocalPhotos();
       if (savedPhotos.length > 0) {
         setUploadedPhotos(savedPhotos);
       }
+      
+      // 加载自定义音乐
+      const savedMusic = await getLocalMusic();
+      if (savedMusic) {
+        // 如果配置中 selected 是 custom，恢复 customUrl
+        setSceneConfig(prev => {
+          if (prev.music?.selected === 'custom') {
+            return {
+              ...prev,
+              music: {
+                ...prev.music,
+                customUrl: savedMusic
+              }
+            };
+          }
+          return prev;
+        });
+      }
+      
       setConfigLoaded(true);
     };
-    loadPhotos();
+    loadLocalData();
   }, []);
 
   // 配置变化时保存到本地（只在初始加载完成后才保存，避免覆盖）
   useEffect(() => {
     if (configLoaded) {
       saveLocalConfig(sceneConfig as unknown as Record<string, unknown>);
+      
+      // 单独保存自定义音乐到 IndexedDB
+      const customUrl = sceneConfig.music?.customUrl;
+      if (sceneConfig.music?.selected === 'custom' && customUrl) {
+        saveLocalMusic(customUrl);
+      } else if (sceneConfig.music?.selected !== 'custom') {
+        // 如果切换到非自定义音乐，清除存储的音乐
+        saveLocalMusic(null);
+      }
     }
   }, [sceneConfig, configLoaded]);
 

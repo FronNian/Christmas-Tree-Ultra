@@ -430,11 +430,20 @@ export const clearLocalShare = (): void => {
 };
 
 /**
- * 保存配置到本地
+ * 保存配置到本地（排除大数据如 customUrl）
  */
 export const saveLocalConfig = (config: Record<string, unknown>): void => {
   try {
-    localStorage.setItem(LOCAL_CONFIG_KEY, JSON.stringify(config));
+    // 深拷贝并排除 music.customUrl（音乐数据单独存储到 IndexedDB）
+    const configToSave = JSON.parse(JSON.stringify(config));
+    if (configToSave.music && typeof configToSave.music === 'object') {
+      const music = configToSave.music as Record<string, unknown>;
+      // 保留 selected 为 'custom' 的标记，但不存储实际数据
+      if (music.customUrl) {
+        delete music.customUrl;
+      }
+    }
+    localStorage.setItem(LOCAL_CONFIG_KEY, JSON.stringify(configToSave));
   } catch (e) {
     console.error('Failed to save config:', e);
   }
@@ -448,6 +457,59 @@ export const getLocalConfig = (): Record<string, unknown> | null => {
     const data = localStorage.getItem(LOCAL_CONFIG_KEY);
     return data ? JSON.parse(data) : null;
   } catch {
+    return null;
+  }
+};
+
+/**
+ * 保存自定义音乐到 IndexedDB
+ */
+export const saveLocalMusic = async (musicData: string | null): Promise<void> => {
+  try {
+    const db = await openPhotosDB();
+    const tx = db.transaction('music', 'readwrite');
+    const store = tx.objectStore('music');
+    
+    if (musicData) {
+      await new Promise<void>((resolve, reject) => {
+        const putReq = store.put({ id: 'custom', data: musicData });
+        putReq.onsuccess = () => resolve();
+        putReq.onerror = () => reject(putReq.error);
+      });
+    } else {
+      // 清除音乐
+      await new Promise<void>((resolve, reject) => {
+        const deleteReq = store.delete('custom');
+        deleteReq.onsuccess = () => resolve();
+        deleteReq.onerror = () => reject(deleteReq.error);
+      });
+    }
+    
+    db.close();
+  } catch (e) {
+    console.error('Failed to save music to IndexedDB:', e);
+  }
+};
+
+/**
+ * 获取本地保存的自定义音乐
+ */
+export const getLocalMusic = async (): Promise<string | null> => {
+  try {
+    const db = await openPhotosDB();
+    const tx = db.transaction('music', 'readonly');
+    const store = tx.objectStore('music');
+    
+    const result = await new Promise<{ id: string; data: string } | undefined>((resolve, reject) => {
+      const getReq = store.get('custom');
+      getReq.onsuccess = () => resolve(getReq.result);
+      getReq.onerror = () => reject(getReq.error);
+    });
+    
+    db.close();
+    return result?.data || null;
+  } catch (e) {
+    console.error('Failed to get music from IndexedDB:', e);
     return null;
   }
 };
@@ -547,11 +609,11 @@ export const getLocalPhotos = async (): Promise<string[]> => {
 };
 
 /**
- * 打开照片数据库
+ * 打开照片数据库（版本 2：增加音乐存储）
  */
 const openPhotosDB = (): Promise<IDBDatabase> => {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open('christmas_tree_db', 1);
+    const request = indexedDB.open('christmas_tree_db', 2);
     
     request.onerror = () => reject(request.error);
     request.onsuccess = () => resolve(request.result);
@@ -560,6 +622,10 @@ const openPhotosDB = (): Promise<IDBDatabase> => {
       const db = (event.target as IDBOpenDBRequest).result;
       if (!db.objectStoreNames.contains('photos')) {
         db.createObjectStore('photos', { keyPath: 'id' });
+      }
+      // 版本 2：添加音乐存储
+      if (!db.objectStoreNames.contains('music')) {
+        db.createObjectStore('music', { keyPath: 'id' });
       }
     };
   });
