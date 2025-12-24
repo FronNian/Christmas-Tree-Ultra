@@ -198,38 +198,54 @@ export const uploadShare = async (
       };
     }
 
-    // 上传到 R2（通过 Worker 代理）
-    const response = await fetch(`${R2_API_URL}/shares/${shareId}.json`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(shareData)
-    });
+    console.log(`Uploading share: ${sizeMB.toFixed(2)} MB`);
 
-    if (!response.ok) {
-      // 400/413 等前端可识别错误，返回用户提示
-      let serverMessage = '';
-      try {
-        // 优先解析 JSON，携带 details
-        const text = await response.text();
-        serverMessage = text;
+    // 上传到 R2（通过 Worker 代理）- 添加超时控制
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 240000); // 240秒超时
+    
+    try {
+      const response = await fetch(`${R2_API_URL}/shares/${shareId}.json`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(shareData),
+        signal: controller.signal
+      });
+      
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        // 400/413 等前端可识别错误，返回用户提示
+        let serverMessage = '';
         try {
-          const parsed = JSON.parse(text);
-          if (parsed?.error || parsed?.details) {
-            const details = Array.isArray(parsed.details) ? parsed.details.join('; ') : '';
-            serverMessage = `${parsed.error || ''}${details ? `: ${details}` : ''}`;
+          // 优先解析 JSON，携带 details
+          const text = await response.text();
+          serverMessage = text;
+          try {
+            const parsed = JSON.parse(text);
+            if (parsed?.error || parsed?.details) {
+              const details = Array.isArray(parsed.details) ? parsed.details.join('; ') : '';
+              serverMessage = `${parsed.error || ''}${details ? `: ${details}` : ''}`;
+            }
+          } catch {
+            // 非 JSON，保留原文
           }
         } catch {
-          // 非 JSON，保留原文
+          // ignore
         }
-      } catch {
-        // ignore
+        if (response.status === 400) {
+          return { success: false, error: serverMessage || '上传失败：请求格式或参数错误（400）。' };
+        }
+        throw new Error(`上传失败: ${response.status}${serverMessage ? ` - ${serverMessage}` : ''}`);
       }
-      if (response.status === 400) {
-        return { success: false, error: serverMessage || '上传失败：请求格式或参数错误（400）。' };
+    } catch (fetchError) {
+      clearTimeout(timeoutId);
+      if ((fetchError as Error).name === 'AbortError') {
+        return { success: false, error: '上传超时，请检查网络后重试。如果数据较大，可能需要更长时间。' };
       }
-      throw new Error(`上传失败: ${response.status}${serverMessage ? ` - ${serverMessage}` : ''}`);
+      throw fetchError;
     }
 
     // 保存到本地
@@ -307,38 +323,55 @@ export const updateShare = async (
       };
     }
 
-    const response = await fetch(`${R2_API_URL}/shares/${shareId}.json`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(updatedData)
-    });
+    console.log(`Updating share: ${sizeMB.toFixed(2)} MB`);
 
-    if (!response.ok) {
-      let serverMessage = '';
-      try {
-        const text = await response.text();
-        serverMessage = text;
+    // 添加超时控制
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 240000); // 240秒超时
+
+    try {
+      const response = await fetch(`${R2_API_URL}/shares/${shareId}.json`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(updatedData),
+        signal: controller.signal
+      });
+      
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        let serverMessage = '';
         try {
-          const parsed = JSON.parse(text);
-          if (parsed?.error || parsed?.details) {
-            const details = Array.isArray(parsed.details) ? parsed.details.join('; ') : '';
-            serverMessage = `${parsed.error || ''}${details ? `: ${details}` : ''}`;
+          const text = await response.text();
+          serverMessage = text;
+          try {
+            const parsed = JSON.parse(text);
+            if (parsed?.error || parsed?.details) {
+              const details = Array.isArray(parsed.details) ? parsed.details.join('; ') : '';
+              serverMessage = `${parsed.error || ''}${details ? `: ${details}` : ''}`;
+            }
+          } catch {
+            // keep raw text
           }
         } catch {
-          // keep raw text
+          // ignore
         }
-      } catch {
-        // ignore
+        if (response.status === 400) {
+          return { success: false, error: serverMessage || '更新失败：请求格式或参数错误（400）。' };
+        }
+        throw new Error(`更新失败: ${response.status}${serverMessage ? ` - ${serverMessage}` : ''}`);
       }
-      if (response.status === 400) {
-        return { success: false, error: serverMessage || '更新失败：请求格式或参数错误（400）。' };
-      }
-      throw new Error(`更新失败: ${response.status}${serverMessage ? ` - ${serverMessage}` : ''}`);
-    }
 
-    return { success: true };
+      return { success: true };
+    } catch (fetchError) {
+      clearTimeout(timeoutId);
+      if ((fetchError as Error).name === 'AbortError') {
+        return { success: false, error: '更新超时，请检查网络后重试。' };
+      }
+      throw fetchError;
+    }
   } catch (error) {
     console.error('Update error:', error);
     return {
