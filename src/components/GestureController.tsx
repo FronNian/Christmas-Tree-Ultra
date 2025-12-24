@@ -332,18 +332,51 @@ export const GestureController = ({
         handLandmarker = landmarker;
 
         if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          videoRef.current.addEventListener('loadeddata', () => {
-            if (videoRef.current && canvasRef.current) {
-               requestAnimationFrame(() => {
-                 if(!isActive) return;
-                 if (loadingTimeoutId) clearTimeout(loadingTimeoutId);
-                 callbacksRef.current.onStatus('AI READY');
-                 lastFrameTimeRef.current = Date.now();
-                 predictWebcam();
-               });
+          const video = videoRef.current;
+          video.srcObject = stream;
+          
+          // 移动端需要显式调用 play() 并等待
+          const startVideo = async () => {
+            try {
+              await video.play();
+              console.log('Video playing, readyState:', video.readyState);
+            } catch (playErr) {
+              console.warn('Video play error:', playErr);
             }
-          }, { once: true });
+          };
+          
+          // 使用多种事件确保能捕获到视频就绪
+          const onVideoReady = () => {
+            console.log('Video ready event fired, readyState:', video.readyState);
+            if (video.readyState >= 2 && canvasRef.current) {
+              // 移除所有监听器
+              video.removeEventListener('loadeddata', onVideoReady);
+              video.removeEventListener('canplay', onVideoReady);
+              video.removeEventListener('playing', onVideoReady);
+              
+              requestAnimationFrame(() => {
+                if (!isActive) return;
+                if (loadingTimeoutId) clearTimeout(loadingTimeoutId);
+                callbacksRef.current.onStatus('AI READY');
+                lastFrameTimeRef.current = Date.now();
+                predictWebcam();
+              });
+            }
+          };
+          
+          // 监听多个事件，确保移动端兼容性
+          video.addEventListener('loadeddata', onVideoReady, { once: false });
+          video.addEventListener('canplay', onVideoReady, { once: false });
+          video.addEventListener('playing', onVideoReady, { once: false });
+          
+          // 如果视频已经就绪（可能在设置 srcObject 之前就已经有数据）
+          if (video.readyState >= 2) {
+            console.log('Video already ready');
+            onVideoReady();
+          } else {
+            // 移动端需要显式播放
+            startVideo();
+          }
         }
       } catch (err: unknown) {
         console.error('AI Setup Error:', err);
