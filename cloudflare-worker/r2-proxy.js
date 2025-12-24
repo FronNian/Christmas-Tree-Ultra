@@ -1,19 +1,29 @@
 /**
- * Cloudflare Worker - R2 存储代理
+ * Cloudflare Worker - R2 存储代理（高并发优化版）
+ * 
+ * 高并发特性：
+ * - Cloudflare Cache API 边缘缓存
+ * - 自动全球扩展
+ * - 圣诞节高峰期限流放宽
  * 
  * 部署步骤：
  * 1. Cloudflare Dashboard → Workers & Pages → Create Worker
  * 2. 复制此代码到 Worker 编辑器
  * 3. Settings → Variables → 添加 R2 Bucket 绑定，变量名: R2_BUCKET
  * 4. 绑定自定义域名: r2-api.your-domain.com
- * 5. 删除 DNS 中 r2-api 的 A 记录（如有）
  */
 
-// 请求频率限制（使用 KV 存储，需要绑定 KV namespace: RATE_LIMIT）
+// 缓存配置
+const CACHE_CONFIG = {
+  enabled: true,
+  ttlSeconds: 120,  // 缓存 2 分钟
+};
+
+// 请求频率限制（圣诞节高峰期放宽）
 const RATE_LIMIT = {
   windowMs: 60 * 1000,
-  maxRequests: 30,
-  maxUploads: 5
+  maxRequests: 100,  // 提高到 100/分钟
+  maxUploads: 15     // 提高到 15/分钟
 };
 
 // 允许的来源域名
@@ -178,8 +188,24 @@ export default {
     const corsHeaders = getCorsHeaders(request);
 
     try {
-      // GET - 读取分享
+      // GET - 读取分享（带边缘缓存）
       if (method === 'GET') {
+        const cache = caches.default;
+        const cacheKey = new Request(url.toString(), { method: 'GET' });
+        
+        // 1. 先查边缘缓存
+        if (CACHE_CONFIG.enabled) {
+          const cachedResponse = await cache.match(cacheKey);
+          if (cachedResponse) {
+            // 缓存命中，添加标记头返回
+            const response = new Response(cachedResponse.body, cachedResponse);
+            response.headers.set('X-Cache', 'HIT');
+            response.headers.set('Access-Control-Allow-Origin', corsHeaders['Access-Control-Allow-Origin']);
+            return response;
+          }
+        }
+        
+        // 2. 缓存未命中，查 R2
         const object = await env.R2_BUCKET.get(key);
         
         if (!object) {
@@ -187,14 +213,23 @@ export default {
         }
 
         const data = await object.text();
-        return new Response(data, {
+        const response = new Response(data, {
           headers: {
             'Content-Type': 'application/json',
-            'Cache-Control': 'public, max-age=60',
+            'Cache-Control': `public, max-age=${CACHE_CONFIG.ttlSeconds}`,
+            'X-Cache': 'MISS',
             ...corsHeaders,
             ...securityHeaders,
           },
         });
+        
+        // 3. 存入边缘缓存（异步，不阻塞响应）
+        if (CACHE_CONFIG.enabled) {
+          const responseToCache = response.clone();
+          ctx.waitUntil(cache.put(cacheKey, responseToCache));
+        }
+        
+        return response;
       }
 
       // PUT - 创建/更新分享
@@ -236,6 +271,13 @@ export default {
         await env.R2_BUCKET.put(key, JSON.stringify(body), {
           httpMetadata: { contentType: 'application/json' },
         });
+        
+        // 清除该资源的边缘缓存
+        if (CACHE_CONFIG.enabled) {
+          const cache = caches.default;
+          const cacheKey = new Request(`${url.origin}/shares/${id}.json`, { method: 'GET' });
+          ctx.waitUntil(cache.delete(cacheKey));
+        }
 
         return jsonResponse({ success: true }, 200, request);
       }
@@ -264,6 +306,14 @@ export default {
         }
 
         await env.R2_BUCKET.delete(key);
+        
+        // 清除该资源的边缘缓存
+        if (CACHE_CONFIG.enabled) {
+          const cache = caches.default;
+          const cacheKey = new Request(`${url.origin}/shares/${id}.json`, { method: 'GET' });
+          ctx.waitUntil(cache.delete(cacheKey));
+        }
+        
         return jsonResponse({ success: true }, 200, request);
       }
 
