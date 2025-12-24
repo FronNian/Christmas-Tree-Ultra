@@ -16,7 +16,6 @@ const LOCAL_CONFIG_KEY = 'christmas_tree_config';
 const LOCAL_PHOTOS_KEY = 'christmas_tree_photos';
 
 // 服务器限制（见 r2-server/server.js 校验逻辑）
-const MAX_PHOTO_COUNT = 20;      // 最多 20 张
 const MAX_PHOTO_SIZE_MB = 10;    // 单张 base64 长度上限 10MB
 
 // 分享数据接口
@@ -53,11 +52,8 @@ const estimateBase64SizeMB = (base64: string): number => {
   return bytes / (1024 * 1024);
 };
 
-// 前置校验：照片数量/单张大小（与后端保持一致，避免 400）
+// 前置校验：单张大小（与后端保持一致，避免 400）
 const validatePhotos = (photos: string[]): { ok: boolean; error?: string } => {
-  if (photos.length > MAX_PHOTO_COUNT) {
-    return { ok: false, error: `照片数量超过 ${MAX_PHOTO_COUNT} 张，请删减后再试。` };
-  }
   for (let i = 0; i < photos.length; i++) {
     const size = estimateBase64SizeMB(photos[i]);
     if (size > MAX_PHOTO_SIZE_MB) {

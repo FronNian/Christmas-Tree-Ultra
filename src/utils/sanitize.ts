@@ -836,7 +836,7 @@ export const sanitizeShareConfig = (config: unknown): Record<string, unknown> =>
 /**
  * 验证并清理照片数组
  */
-export const sanitizePhotos = (photos: unknown, maxCount: number = 20): string[] => {
+export const sanitizePhotos = (photos: unknown, maxCount: number = 100): string[] => {
   if (!Array.isArray(photos)) return [];
   
   return photos
