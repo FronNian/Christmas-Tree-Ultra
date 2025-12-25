@@ -3,6 +3,8 @@
  * 使用 Worker 代理上传，自定义域名访问
  */
 
+import { validatePasswordFormat, hashPassword, verifyPassword } from '../utils/password';
+
 // R2 Worker API 地址（需要部署 Worker 后填写）
 // 部署后改成你的 Worker 域名，如 'https://r2-api.your-domain.com'
 const R2_API_URL = import.meta.env.VITE_R2_API_URL || '';
@@ -205,7 +207,6 @@ export const uploadShare = async (
     let passwordHash: string | undefined;
     let passwordSalt: string | undefined;
     if (password) {
-      const { validatePasswordFormat, hashPassword } = await import('../utils/password');
       const validation = validatePasswordFormat(password);
       if (!validation.valid) {
         return { success: false, error: validation.error };
@@ -363,7 +364,6 @@ export const updateShare = async (
     let passwordHash: string | undefined;
     let passwordSalt: string | undefined;
     if (password) {
-      const { validatePasswordFormat, hashPassword } = await import('../utils/password');
       const validation = validatePasswordFormat(password);
       if (!validation.valid) {
         return { success: false, error: validation.error };
@@ -572,8 +572,7 @@ export const verifySharePassword = async (
       return { valid: true }; // 无密码保护，直接通过
     }
 
-    // 动态导入密码验证函数
-    const { verifyPassword } = await import('../utils/password');
+    // 验证密码
     const isValid = await verifyPassword(password, data.passwordHash, data.passwordSalt);
     
     if (isValid) {
