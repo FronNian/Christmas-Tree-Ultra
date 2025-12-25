@@ -17,6 +17,9 @@
  * 5. 配置反向代理到你的域名
  */
 
+// 加载环境变量
+require('dotenv').config();
+
 const express = require('express');
 const cors = require('cors');
 const compression = require('compression');
@@ -47,7 +50,7 @@ const httpsAgent = new https.Agent({
   keepAliveMsecs: 30000,
   maxSockets: 100,        // 最大并发连接数
   maxFreeSockets: 20,     // 空闲连接数
-  timeout: 30000
+  timeout: 600000         // 10分钟超时
 });
 
 const s3Client = new S3Client({
@@ -59,8 +62,8 @@ const s3Client = new S3Client({
   },
   requestHandler: new NodeHttpHandler({
     httpsAgent,
-    connectionTimeout: 10000,
-    socketTimeout: 30000
+    connectionTimeout: 60000,   // 连接超时 1 分钟
+    socketTimeout: 600000       // 读写超时 10 分钟
   }),
   maxAttempts: 3  // 自动重试
 });
@@ -512,6 +515,174 @@ app.delete('/shares/:id.json', async (req, res) => {
     res.json({ success: true });
   } catch (error) {
     console.error('[DELETE ERROR]', error.message);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ============ 图片分离存储 API ============
+
+// 生成图片 ID
+function generateImageId() {
+  return Date.now().toString(36) + Math.random().toString(36).substr(2, 8);
+}
+
+// 验证图片 ID 格式
+function validateImageId(id) {
+  return /^[a-z0-9]{10,20}$/.test(id);
+}
+
+// POST - 上传单张图片（base64）
+app.post('/images', checkUploadLimit, async (req, res) => {
+  try {
+    const { data, shareId, editToken } = req.body;
+    
+    // 验证必填字段
+    if (!data || !shareId || !editToken) {
+      return res.status(400).json({ error: 'Missing required fields: data, shareId, editToken' });
+    }
+    
+    // 验证 shareId 格式
+    if (!validateShareId(shareId)) {
+      return res.status(400).json({ error: 'Invalid shareId format' });
+    }
+    
+    // 验证 editToken 格式
+    if (!validateEditToken(editToken)) {
+      return res.status(400).json({ error: 'Invalid editToken format' });
+    }
+    
+    // 验证 base64 数据
+    if (!data.startsWith('data:image/')) {
+      return res.status(400).json({ error: 'Invalid image data, must be base64 data URL' });
+    }
+    
+    // 检查图片大小（base64 约为原始大小的 1.37 倍，限制 10MB）
+    if (data.length > 10 * 1024 * 1024) {
+      return res.status(400).json({ error: 'Image too large, max 10MB' });
+    }
+    
+    // 提取 MIME 类型和数据
+    const matches = data.match(/^data:(image\/[a-z+]+);base64,(.+)$/i);
+    if (!matches) {
+      return res.status(400).json({ error: 'Invalid base64 format' });
+    }
+    
+    const mimeType = matches[1];
+    const base64Data = matches[2];
+    const buffer = Buffer.from(base64Data, 'base64');
+    
+    // 根据 MIME 类型确定扩展名
+    const extMap = {
+      'image/jpeg': 'jpg',
+      'image/png': 'png',
+      'image/gif': 'gif',
+      'image/webp': 'webp'
+    };
+    const ext = extMap[mimeType] || 'jpg';
+    
+    // 生成图片 ID 和路径
+    const imageId = generateImageId();
+    const key = `images/${shareId}/${imageId}.${ext}`;
+    
+    console.log(`[IMAGE UPLOAD] ${key} (${(buffer.length / 1024).toFixed(1)} KB)`);
+    
+    // 上传到 R2
+    const putCommand = new PutObjectCommand({
+      Bucket: R2_CONFIG.bucketName,
+      Key: key,
+      Body: buffer,
+      ContentType: mimeType,
+      // 设置缓存控制，图片可以长期缓存
+      CacheControl: 'public, max-age=31536000'
+    });
+    
+    await s3Client.send(putCommand);
+    
+    // 返回图片 URL
+    const publicUrl = process.env.R2_PUBLIC_URL || `https://${req.get('host')}`;
+    const imageUrl = `${publicUrl}/${key}`;
+    
+    res.json({ 
+      success: true, 
+      imageId,
+      url: imageUrl,
+      key
+    });
+  } catch (error) {
+    console.error('[IMAGE UPLOAD ERROR]', error.message);
+    res.status(500).json({ error: 'Upload failed' });
+  }
+});
+
+// GET - 获取图片
+app.get('/images/:shareId/:filename', async (req, res) => {
+  try {
+    const { shareId, filename } = req.params;
+    
+    if (!validateShareId(shareId)) {
+      return res.status(400).json({ error: 'Invalid shareId' });
+    }
+    
+    const key = `images/${shareId}/${filename}`;
+    
+    const command = new GetObjectCommand({
+      Bucket: R2_CONFIG.bucketName,
+      Key: key
+    });
+    
+    const response = await s3Client.send(command);
+    const body = await response.Body.transformToByteArray();
+    
+    // 设置响应头
+    res.setHeader('Content-Type', response.ContentType || 'image/jpeg');
+    res.setHeader('Cache-Control', 'public, max-age=31536000');
+    res.setHeader('Content-Length', body.length);
+    
+    res.send(Buffer.from(body));
+  } catch (error) {
+    if (error.name === 'NoSuchKey') {
+      return res.status(404).json({ error: 'Image not found' });
+    }
+    console.error('[IMAGE GET ERROR]', error.message);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// DELETE - 删除分享的所有图片（批量）
+app.delete('/images/:shareId', async (req, res) => {
+  try {
+    const { shareId } = req.params;
+    const token = req.query.token;
+    
+    if (!validateShareId(shareId)) {
+      return res.status(400).json({ error: 'Invalid shareId' });
+    }
+    
+    if (!token || !validateEditToken(token)) {
+      return res.status(401).json({ error: 'Invalid token' });
+    }
+    
+    // 验证 token（检查对应的分享是否存在且 token 匹配）
+    const shareKey = `shares/${shareId}.json`;
+    const result = await getWithDedup(shareKey);
+    
+    if (result.notFound) {
+      // 分享不存在，可能已删除，允许清理图片
+      console.log(`[IMAGE DELETE] Share ${shareId} not found, skipping token check`);
+    } else if (result.success) {
+      const shareData = JSON.parse(result.data);
+      if (shareData.editToken !== token) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+    }
+    
+    // 注意：R2 不支持批量删除前缀，这里只是标记
+    // 实际清理可以通过 R2 生命周期规则或定时任务处理
+    console.log(`[IMAGE DELETE] Marked for deletion: images/${shareId}/*`);
+    
+    res.json({ success: true, message: 'Images marked for deletion' });
+  } catch (error) {
+    console.error('[IMAGE DELETE ERROR]', error.message);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

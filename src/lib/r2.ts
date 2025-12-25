@@ -1,16 +1,92 @@
 /**
  * Cloudflare R2 存储服务
  * 使用 Worker 代理上传，自定义域名访问
+ * 支持多服务器负载均衡和故障转移
  */
 
 import { validatePasswordFormat, hashPassword, verifyPassword } from '../utils/password';
 
-// R2 Worker API 地址（需要部署 Worker 后填写）
-// 部署后改成你的 Worker 域名，如 'https://r2-api.your-domain.com'
-const R2_API_URL = import.meta.env.VITE_R2_API_URL || '';
+// R2 API 服务器列表（支持多个服务器负载均衡）
+const R2_API_SERVERS = [
+  import.meta.env.VITE_R2_API_URL,      // 主服务器（宝塔）
+  import.meta.env.VITE_R2_API_URL_CF,   // 备用服务器（Cloudflare Worker）
+].filter(Boolean) as string[];
 
 // R2 公开访问域名（用于读取）
 const R2_PUBLIC_URL = import.meta.env.VITE_R2_PUBLIC_URL || '';
+
+// 缓存最快的服务器（5分钟有效）
+let cachedFastestServer: { url: string; timestamp: number } | null = null;
+const CACHE_TTL = 5 * 60 * 1000; // 5分钟
+
+/**
+ * 检测并选择最快的 API 服务器
+ */
+const selectFastestServer = async (): Promise<string> => {
+  // 只有一个服务器，直接返回
+  if (R2_API_SERVERS.length <= 1) {
+    return R2_API_SERVERS[0] || '';
+  }
+
+  // 检查缓存是否有效
+  if (cachedFastestServer && Date.now() - cachedFastestServer.timestamp < CACHE_TTL) {
+    return cachedFastestServer.url;
+  }
+
+  console.log('[R2] 检测最快服务器...');
+
+  // 并发测试所有服务器延迟
+  const results = await Promise.allSettled(
+    R2_API_SERVERS.map(async (url) => {
+      const start = Date.now();
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+      try {
+        await fetch(`${url}/health`, {
+          method: 'GET',
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+        return { url, latency: Date.now() - start };
+      } catch {
+        clearTimeout(timeoutId);
+        throw new Error('timeout');
+      }
+    })
+  );
+
+  // 筛选成功的结果并按延迟排序
+  const successful = results
+    .filter((r): r is PromiseFulfilledResult<{ url: string; latency: number }> =>
+      r.status === 'fulfilled'
+    )
+    .map((r) => r.value)
+    .sort((a, b) => a.latency - b.latency);
+
+  if (successful.length > 0) {
+    const fastest = successful[0];
+    console.log(`[R2] 最快服务器: ${fastest.url} (${fastest.latency}ms)`);
+    cachedFastestServer = { url: fastest.url, timestamp: Date.now() };
+    return fastest.url;
+  }
+
+  // 所有服务器都失败，返回第一个
+  console.warn('[R2] 所有服务器检测失败，使用默认服务器');
+  return R2_API_SERVERS[0];
+};
+
+/**
+ * 获取备用服务器列表（排除当前服务器）
+ */
+const getBackupServers = (currentServer: string): string[] => {
+  return R2_API_SERVERS.filter((url) => url !== currentServer);
+};
+
+// 兼容旧代码的 R2_API_URL（动态获取）
+const getR2ApiUrl = async (): Promise<string> => {
+  return await selectFastestServer();
+};
 
 // 本地存储 key
 const LOCAL_SHARE_KEY = 'christmas_tree_share';
@@ -92,6 +168,110 @@ const validatePhotos = (photos: string[]): { ok: boolean; error?: string } => {
     }
   }
   return { ok: true };
+};
+
+/**
+ * 判断是否为图片 URL（而非 base64）
+ */
+const isImageUrl = (str: string): boolean => {
+  return str.startsWith('http://') || str.startsWith('https://');
+};
+
+/**
+ * 上传单张图片到服务器
+ * @param base64Data base64 图片数据
+ * @param shareId 分享 ID
+ * @param editToken 编辑令牌
+ * @param serverUrl 服务器地址
+ * @returns 图片 URL 或 null
+ */
+const uploadSingleImage = async (
+  base64Data: string,
+  shareId: string,
+  editToken: string,
+  serverUrl: string
+): Promise<string | null> => {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 120000); // 2分钟超时
+
+    const response = await fetch(`${serverUrl}/images`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        data: base64Data,
+        shareId,
+        editToken
+      }),
+      signal: controller.signal
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      console.error(`[R2] 图片上传失败: ${response.status}`);
+      return null;
+    }
+
+    const result = await response.json();
+    return result.url || null;
+  } catch (error) {
+    console.error('[R2] 图片上传错误:', error);
+    return null;
+  }
+};
+
+/**
+ * 批量上传图片（带进度回调）
+ * @param photos base64 图片数组
+ * @param shareId 分享 ID
+ * @param editToken 编辑令牌
+ * @param onProgress 进度回调 (current, total)
+ * @returns 图片 URL 数组（失败的保持 base64）
+ */
+export const uploadImages = async (
+  photos: string[],
+  shareId: string,
+  editToken: string,
+  onProgress?: (current: number, total: number) => void
+): Promise<string[]> => {
+  const serverUrl = await getR2ApiUrl();
+  if (!serverUrl) {
+    console.warn('[R2] 服务器未配置，保持 base64');
+    return photos;
+  }
+
+  const results: string[] = [];
+  const total = photos.length;
+
+  for (let i = 0; i < photos.length; i++) {
+    const photo = photos[i];
+    
+    // 如果已经是 URL，跳过
+    if (isImageUrl(photo)) {
+      results.push(photo);
+      onProgress?.(i + 1, total);
+      continue;
+    }
+
+    // 上传 base64 图片
+    console.log(`[R2] 上传图片 ${i + 1}/${total}`);
+    const url = await uploadSingleImage(photo, shareId, editToken, serverUrl);
+    
+    if (url) {
+      results.push(url);
+    } else {
+      // 上传失败，保持 base64（兼容旧方式）
+      console.warn(`[R2] 图片 ${i + 1} 上传失败，保持 base64`);
+      results.push(photo);
+    }
+
+    onProgress?.(i + 1, total);
+  }
+
+  return results;
 };
 
 // 本地存储的分享信息
@@ -213,8 +393,10 @@ export const uploadShare = async (
   expiry: ExpiryOption = '7days'
 ): Promise<{ success: boolean; shareId?: string; editToken?: string; expiresAt?: number; error?: string }> => {
   try {
-    if (!R2_API_URL) {
-      return { success: false, error: '上传服务未配置，请联系管理员（缺少 R2_API_URL）。' };
+    // 获取最快的服务器
+    const primaryServer = await getR2ApiUrl();
+    if (!primaryServer) {
+      return { success: false, error: '上传服务未配置，请联系管理员。' };
     }
 
     // 预校验：数量与单张大小（与后端校验一致，提前给出友好提示）
@@ -251,13 +433,18 @@ export const uploadShare = async (
     const now = Date.now();
     const expiresAt = calculateExpiresAt(expiry);
 
+    // 先上传图片，获取 URL（图片分离存储，加快加载速度）
+    console.log(`[R2] 开始上传 ${photos.length} 张图片...`);
+    const uploadedPhotos = await uploadImages(photos, shareId, editToken);
+    console.log(`[R2] 图片上传完成`);
+
     // 提取语音数据和自定义音乐
     const { voiceUrls, customMusicUrl, cleanConfig } = extractVoiceDataFromConfig(config);
 
     const shareData: ShareData = {
       id: shareId,
       editToken,
-      photos,
+      photos: uploadedPhotos, // 使用上传后的 URL
       config: cleanConfig,
       message,
       createdAt: now,
@@ -278,88 +465,104 @@ export const uploadShare = async (
       };
     }
 
-    console.log(`Uploading share: ${sizeMB.toFixed(2)} MB`);
+    console.log(`[R2] 上传分享配置: ${sizeMB.toFixed(2)} MB`);
 
-    // 上传到 R2（通过 Worker 代理）- 添加超时控制和重试
-    const maxRetries = 2;
+    // 构建服务器列表：主服务器 + 备用服务器
+    const servers = [primaryServer, ...getBackupServers(primaryServer)];
     let lastError: Error | null = null;
-    
-    for (let attempt = 0; attempt <= maxRetries; attempt++) {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 600000); // 10分钟超时
-      
-      try {
-        const response = await fetch(`${R2_API_URL}/shares/${shareId}.json`, {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(shareData),
-          signal: controller.signal
-        });
-        
-        clearTimeout(timeoutId);
 
-        if (!response.ok) {
-          // 400/413 等前端可识别错误，返回用户提示
-          let serverMessage = '';
-          try {
-            const text = await response.text();
-            serverMessage = text;
+    // 尝试每个服务器
+    for (let serverIndex = 0; serverIndex < servers.length; serverIndex++) {
+      const serverUrl = servers[serverIndex];
+      console.log(`[R2] 尝试服务器 ${serverIndex + 1}/${servers.length}: ${serverUrl}`);
+
+      // 每个服务器最多重试 2 次
+      for (let attempt = 0; attempt <= 1; attempt++) {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 600000); // 10分钟超时
+
+        try {
+          const response = await fetch(`${serverUrl}/shares/${shareId}.json`, {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(shareData),
+            signal: controller.signal
+          });
+
+          clearTimeout(timeoutId);
+
+          if (!response.ok) {
+            // 400/413 等前端可识别错误，返回用户提示（不切换服务器）
+            let serverMessage = '';
             try {
-              const parsed = JSON.parse(text);
-              if (parsed?.error || parsed?.details) {
-                const details = Array.isArray(parsed.details) ? parsed.details.join('; ') : '';
-                serverMessage = `${parsed.error || ''}${details ? `: ${details}` : ''}`;
+              const text = await response.text();
+              serverMessage = text;
+              try {
+                const parsed = JSON.parse(text);
+                if (parsed?.error || parsed?.details) {
+                  const details = Array.isArray(parsed.details) ? parsed.details.join('; ') : '';
+                  serverMessage = `${parsed.error || ''}${details ? `: ${details}` : ''}`;
+                }
+              } catch {
+                // 非 JSON，保留原文
               }
             } catch {
-              // 非 JSON，保留原文
+              // ignore
             }
-          } catch {
-            // ignore
+            if (response.status === 400) {
+              return { success: false, error: serverMessage || '上传失败：请求格式或参数错误（400）。' };
+            }
+            throw new Error(`上传失败: ${response.status}${serverMessage ? ` - ${serverMessage}` : ''}`);
           }
-          if (response.status === 400) {
-            return { success: false, error: serverMessage || '上传失败：请求格式或参数错误（400）。' };
-          }
-          throw new Error(`上传失败: ${response.status}${serverMessage ? ` - ${serverMessage}` : ''}`);
-        }
-        
-        // 上传成功，保存到本地并返回
-        saveLocalShare({
-          shareId,
-          editToken,
-          createdAt: now
-        });
 
-        return {
-          success: true,
-          shareId,
-          editToken,
-          expiresAt
-        };
-      } catch (fetchError) {
-        clearTimeout(timeoutId);
-        lastError = fetchError as Error;
-        
-        if (lastError.name === 'AbortError') {
-          return { success: false, error: '上传超时，请检查网络后重试。如果数据较大，可能需要更长时间。' };
+          // 上传成功，保存到本地并返回
+          saveLocalShare({
+            shareId,
+            editToken,
+            createdAt: now
+          });
+
+          console.log(`[R2] 上传成功，使用服务器: ${serverUrl}`);
+          return {
+            success: true,
+            shareId,
+            editToken,
+            expiresAt
+          };
+        } catch (fetchError) {
+          clearTimeout(timeoutId);
+          lastError = fetchError as Error;
+
+          if (lastError.name === 'AbortError') {
+            console.warn(`[R2] 服务器 ${serverUrl} 超时`);
+            break; // 超时直接切换服务器
+          }
+
+          // 网络错误，重试一次
+          if (attempt === 0 && (lastError.message === 'Failed to fetch' || lastError.message.includes('NetworkError'))) {
+            console.log(`[R2] 重试中...`);
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            continue;
+          }
+
+          // 重试失败，切换服务器
+          console.warn(`[R2] 服务器 ${serverUrl} 失败: ${lastError.message}`);
+          break;
         }
-        
-        // 如果是网络错误且还有重试次数，等待后重试
-        if (attempt < maxRetries && (lastError.message === 'Failed to fetch' || lastError.message.includes('NetworkError'))) {
-          console.log(`Upload attempt ${attempt + 1} failed, retrying in 2 seconds...`);
-          await new Promise(resolve => setTimeout(resolve, 2000));
-          continue;
-        }
-        
-        throw lastError;
+      }
+
+      // 清除缓存的服务器（因为它失败了）
+      if (serverIndex === 0) {
+        cachedFastestServer = null;
       }
     }
-    
-    // 所有重试都失败
-    throw lastError || new Error('上传失败');
+
+    // 所有服务器都失败
+    throw lastError || new Error('所有服务器上传失败');
   } catch (error) {
-    console.error('Upload error:', error);
+    console.error('[R2] Upload error:', error);
     // 提供更友好的错误提示
     let errorMessage = '上传失败';
     if (error instanceof Error) {
@@ -398,8 +601,10 @@ export const updateShare = async (
   expiry?: ExpiryOption
 ): Promise<{ success: boolean; expiresAt?: number; error?: string }> => {
   try {
-    if (!R2_API_URL) {
-      return { success: false, error: '上传服务未配置，请联系管理员（缺少 R2_API_URL）。' };
+    // 获取最快的服务器
+    const primaryServer = await getR2ApiUrl();
+    if (!primaryServer) {
+      return { success: false, error: '上传服务未配置，请联系管理员。' };
     }
 
     // 预校验：数量与单张大小
@@ -436,12 +641,17 @@ export const updateShare = async (
     // 计算新的过期时间（如果提供了 expiry）
     const newExpiresAt = expiry ? calculateExpiresAt(expiry) : existing.expiresAt;
     
+    // 上传新图片（只上传 base64 格式的，URL 格式的跳过）
+    console.log(`[R2] 开始上传 ${photos.length} 张图片...`);
+    const uploadedPhotos = await uploadImages(photos, shareId, editToken);
+    console.log(`[R2] 图片上传完成`);
+
     // 提取语音数据和自定义音乐
     const { voiceUrls, customMusicUrl, cleanConfig } = extractVoiceDataFromConfig(config);
     
     const updatedData: ShareData = {
       ...existing,
-      photos,
+      photos: uploadedPhotos, // 使用上传后的 URL
       config: cleanConfig,
       message,
       updatedAt: now,
@@ -461,75 +671,91 @@ export const updateShare = async (
       };
     }
 
-    console.log(`Updating share: ${sizeMB.toFixed(2)} MB`);
+    console.log(`[R2] 更新分享配置: ${sizeMB.toFixed(2)} MB`);
 
-    // 更新到 R2（通过 Worker 代理）- 添加超时控制和重试
-    const maxRetries = 2;
+    // 构建服务器列表：主服务器 + 备用服务器
+    const servers = [primaryServer, ...getBackupServers(primaryServer)];
     let lastError: Error | null = null;
-    
-    for (let attempt = 0; attempt <= maxRetries; attempt++) {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 600000); // 10分钟超时
-      
-      try {
-        const response = await fetch(`${R2_API_URL}/shares/${shareId}.json`, {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(updatedData),
-          signal: controller.signal
-        });
-        
-        clearTimeout(timeoutId);
 
-        if (!response.ok) {
-          let serverMessage = '';
-          try {
-            const text = await response.text();
-            serverMessage = text;
+    // 尝试每个服务器
+    for (let serverIndex = 0; serverIndex < servers.length; serverIndex++) {
+      const serverUrl = servers[serverIndex];
+      console.log(`[R2] 尝试服务器 ${serverIndex + 1}/${servers.length}: ${serverUrl}`);
+
+      // 每个服务器最多重试 1 次
+      for (let attempt = 0; attempt <= 1; attempt++) {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 600000); // 10分钟超时
+
+        try {
+          const response = await fetch(`${serverUrl}/shares/${shareId}.json`, {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(updatedData),
+            signal: controller.signal
+          });
+
+          clearTimeout(timeoutId);
+
+          if (!response.ok) {
+            let serverMessage = '';
             try {
-              const parsed = JSON.parse(text);
-              if (parsed?.error || parsed?.details) {
-                const details = Array.isArray(parsed.details) ? parsed.details.join('; ') : '';
-                serverMessage = `${parsed.error || ''}${details ? `: ${details}` : ''}`;
+              const text = await response.text();
+              serverMessage = text;
+              try {
+                const parsed = JSON.parse(text);
+                if (parsed?.error || parsed?.details) {
+                  const details = Array.isArray(parsed.details) ? parsed.details.join('; ') : '';
+                  serverMessage = `${parsed.error || ''}${details ? `: ${details}` : ''}`;
+                }
+              } catch {
+                // keep raw text
               }
             } catch {
-              // keep raw text
+              // ignore
             }
-          } catch {
-            // ignore
+            if (response.status === 400) {
+              return { success: false, error: serverMessage || '更新失败：请求格式或参数错误（400）。' };
+            }
+            throw new Error(`更新失败: ${response.status}${serverMessage ? ` - ${serverMessage}` : ''}`);
           }
-          if (response.status === 400) {
-            return { success: false, error: serverMessage || '更新失败：请求格式或参数错误（400）。' };
-          }
-          throw new Error(`更新失败: ${response.status}${serverMessage ? ` - ${serverMessage}` : ''}`);
-        }
 
-        return { success: true, expiresAt: newExpiresAt };
-      } catch (fetchError) {
-        clearTimeout(timeoutId);
-        lastError = fetchError as Error;
-        
-        if (lastError.name === 'AbortError') {
-          return { success: false, error: '更新超时，请检查网络后重试。如果数据较大，可能需要更长时间。' };
+          console.log(`[R2] 更新成功，使用服务器: ${serverUrl}`);
+          return { success: true, expiresAt: newExpiresAt };
+        } catch (fetchError) {
+          clearTimeout(timeoutId);
+          lastError = fetchError as Error;
+
+          if (lastError.name === 'AbortError') {
+            console.warn(`[R2] 服务器 ${serverUrl} 超时`);
+            break; // 超时直接切换服务器
+          }
+
+          // 网络错误，重试一次
+          if (attempt === 0 && (lastError.message === 'Failed to fetch' || lastError.message.includes('NetworkError'))) {
+            console.log(`[R2] 重试中...`);
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            continue;
+          }
+
+          // 重试失败，切换服务器
+          console.warn(`[R2] 服务器 ${serverUrl} 失败: ${lastError.message}`);
+          break;
         }
-        
-        // 如果是网络错误且还有重试次数，等待后重试
-        if (attempt < maxRetries && (lastError.message === 'Failed to fetch' || lastError.message.includes('NetworkError'))) {
-          console.log(`Update attempt ${attempt + 1} failed, retrying in 2 seconds...`);
-          await new Promise(resolve => setTimeout(resolve, 2000));
-          continue;
-        }
-        
-        throw lastError;
+      }
+
+      // 清除缓存的服务器（因为它失败了）
+      if (serverIndex === 0) {
+        cachedFastestServer = null;
       }
     }
-    
-    // 所有重试都失败
-    throw lastError || new Error('更新失败');
+
+    // 所有服务器都失败
+    throw lastError || new Error('所有服务器更新失败');
   } catch (error) {
-    console.error('Update error:', error);
+    console.error('[R2] Update error:', error);
     // 提供更友好的错误提示
     let errorMessage = '更新失败';
     if (error instanceof Error) {
@@ -973,7 +1199,8 @@ export const refreshShareExpiry = async (
       refreshCount: refreshCount + 1
     };
 
-    const putResponse = await fetch(`${R2_API_URL}/shares/${shareId}.json`, {
+    const apiUrl = await getR2ApiUrl();
+    const putResponse = await fetch(`${apiUrl}/shares/${shareId}.json`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updatedData)
@@ -1020,7 +1247,8 @@ export const deleteShare = async (
       return { success: false, error: '无权删除此分享' };
     }
 
-    const deleteResponse = await fetch(`${R2_API_URL}/shares/${shareId}.json?token=${encodeURIComponent(editToken)}`, {
+    const apiUrl = await getR2ApiUrl();
+    const deleteResponse = await fetch(`${apiUrl}/shares/${shareId}.json?token=${encodeURIComponent(editToken)}`, {
       method: 'DELETE'
     });
 
