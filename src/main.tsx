@@ -1,9 +1,18 @@
 
 import { StrictMode, Component, type ReactNode, useState, useEffect } from 'react'
 import { createRoot } from 'react-dom/client'
+import * as THREE from 'three'
 import './index.css'
 import App from './App'
 import SharePage from './pages/SharePage'
+
+// 设置全局 crossOrigin，允许加载跨域图片纹理
+// 通过修改 ImageLoader 的默认设置
+const originalLoad = THREE.ImageLoader.prototype.load;
+THREE.ImageLoader.prototype.load = function(url, onLoad, onProgress, onError) {
+  this.setCrossOrigin('anonymous');
+  return originalLoad.call(this, url, onLoad, onProgress, onError);
+};
 
 // 错误边界组件 - 防止白屏
 class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; error: Error | null }> {

@@ -834,13 +834,38 @@ export const sanitizeShareConfig = (config: unknown): Record<string, unknown> =>
 };
 
 /**
- * 验证并清理照片数组
+ * 验证图片 URL 是否合法
+ */
+const isValidImageUrl = (url: string): boolean => {
+  if (!url.startsWith('http://') && !url.startsWith('https://')) {
+    return false;
+  }
+  try {
+    new URL(url);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * 验证并清理照片数组（支持 base64 和 URL）
  */
 export const sanitizePhotos = (photos: unknown, maxCount: number = 100): string[] => {
   if (!Array.isArray(photos)) return [];
   
   return photos
     .slice(0, maxCount)
-    .map(p => sanitizeBase64Image(p))
+    .map(p => {
+      if (typeof p !== 'string') return null;
+      
+      // 如果是 URL，验证格式
+      if (p.startsWith('http://') || p.startsWith('https://')) {
+        return isValidImageUrl(p) ? p : null;
+      }
+      
+      // 如果是 base64，使用原有验证
+      return sanitizeBase64Image(p);
+    })
     .filter((p): p is string => p !== null);
 };
