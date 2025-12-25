@@ -228,7 +228,7 @@ export default function SharePage({ shareId }: SharePageProps) {
       // 重试配置
       const MAX_RETRIES = 3;
       const RETRY_DELAY = 2000; // 重试间隔 2 秒
-      const REQUEST_TIMEOUT = 60000; // 单次请求超时 60 秒
+      const REQUEST_TIMEOUT = 240000; // 单次请求超时 60 秒
 
       // 带重试的请求函数
       const fetchWithRetry = async <T,>(
