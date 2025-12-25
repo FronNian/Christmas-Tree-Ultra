@@ -2,7 +2,8 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { Canvas } from '@react-three/fiber';
 import * as THREE from 'three';
-import { Experience, GestureController, SettingsPanel, TitleOverlay, Modal, LyricsDisplay, AvatarCropper, IntroOverlay, WelcomeTutorial, PrivacyNotice, CenterPhoto, GiftStepOverlay, VoicePlayer, KeyboardShortcuts, PhotoManager, LetterStepOverlay } from './components';
+import { Experience, GestureController, SettingsPanel, TitleOverlay, Modal, LyricsDisplay, AvatarCropper, IntroOverlay, WelcomeTutorial, PrivacyNotice, CenterPhoto, GiftStepOverlay, VoicePlayer, KeyboardShortcuts, PhotoManager, LetterStepOverlay, SharePasswordSetup } from './components';
+import type { ExpiryOption } from './components';
 import { CHRISTMAS_MUSIC_URL } from './config';
 import { THEME_PRESETS, type ThemeKey } from './config/themes';
 import { isMobile, isTablet, fileToBase64, getDefaultSceneConfig, toggleFullscreen, isFullscreen, isFullscreenSupported, getOptimalWebGLConfig } from './utils/helpers';
@@ -1110,6 +1111,10 @@ export default function GrandTreeApp() {
   // 分享状态
   const [isSharing, setIsSharing] = useState(false);
   
+  // 密码设置弹窗状态
+  const [showPasswordSetup, setShowPasswordSetup] = useState(false);
+  const [existingShareHasPassword, setExistingShareHasPassword] = useState(false);
+  
   // 弹窗状态
   const [modalVisible, setModalVisible] = useState(false);
   const [modalType, setModalType] = useState<'alert' | 'confirm' | 'share' | 'error'>('alert');
@@ -1123,6 +1128,9 @@ export default function GrandTreeApp() {
     onCopy: () => void;
     onDelete?: () => void;
     onRefresh?: () => void;
+    hasPassword?: boolean;
+    password?: string;
+    onCopyPassword?: () => void;
   } | undefined>(undefined);
 
 
@@ -1243,35 +1251,69 @@ export default function GrandTreeApp() {
     }
   }, [uploadedPhotos]);
 
-  // 分享功能
-  const handleShare = useCallback(async () => {
+  // 点击分享按钮 - 显示密码设置弹窗
+  const handleShareClick = useCallback(async () => {
     if (uploadedPhotos.length === 0) {
       showModal('error', '提示', '请先上传照片');
       return;
     }
     
+    // 检查是否已有分享
+    const localShare = getLocalShare();
+    if (localShare) {
+      // 获取现有分享的密码状态
+      const shareData = await getShare(localShare.shareId);
+      if (shareData) {
+        setExistingShareHasPassword(!!(shareData.passwordHash && shareData.passwordSalt));
+      } else {
+        // 分享已过期，清除本地记录
+        clearLocalShare();
+        setExistingShareHasPassword(false);
+      }
+    } else {
+      setExistingShareHasPassword(false);
+    }
+    
+    // 显示密码设置弹窗
+    setShowPasswordSetup(true);
+  }, [uploadedPhotos.length, showModal]);
+
+  // 执行实际的分享操作
+  const executeShare = useCallback(async (password: string | null, expiry: ExpiryOption) => {
+    setShowPasswordSetup(false);
     setIsSharing(true);
+    
     try {
       const localShare = getLocalShare();
       
       if (localShare) {
-        // 已有分享 - 先显示弹窗，后台更新
+        // 已有分享 - 更新
         const shareUrl = getShareUrl(localShare.shareId);
         
-        // 立即显示弹窗（使用缓存的过期时间，后台更新）
+        // 立即显示弹窗
         setModalShareUrl(shareUrl);
         setModalShareInfo({
           shareId: localShare.shareId,
-          expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000, // 临时值，后台会更新
+          expiresAt: expiry === 'permanent' ? -1 : Date.now() + (expiry === '7days' ? 7 : expiry === '30days' ? 30 : 90) * 24 * 60 * 60 * 1000,
           canEdit: true,
+          hasPassword: !!password || existingShareHasPassword,
+          password: password || undefined,
           onCopy: async () => {
             try {
               await navigator.clipboard.writeText(shareUrl);
               showModal('alert', '已复制', '分享链接已复制到剪贴板');
             } catch {
-              // 复制失败时保持弹窗打开
+              // 复制失败
             }
           },
+          onCopyPassword: password ? async () => {
+            try {
+              await navigator.clipboard.writeText(password);
+              showModal('alert', '已复制', '密码已复制到剪贴板');
+            } catch {
+              // 复制失败
+            }
+          } : undefined,
           onRefresh: async () => {
             const result = await refreshShareExpiry(localShare.shareId, localShare.editToken);
             if (result.success) {
@@ -1292,7 +1334,7 @@ export default function GrandTreeApp() {
         });
         showModal('share', '分享管理', '正在同步更新...');
         
-        // 并行：获取分享详情 + 更新分享内容
+        // 更新分享（传递密码和有效期参数）
         const [shareData, updateResult] = await Promise.all([
           getShare(localShare.shareId),
           updateShare(
@@ -1300,41 +1342,45 @@ export default function GrandTreeApp() {
             localShare.editToken,
             uploadedPhotos,
             sceneConfig as unknown as Record<string, unknown>,
-            sceneConfig.gestureText
+            sceneConfig.gestureText,
+            password,  // 传递密码
+            expiry     // 传递有效期
           )
         ]);
         
         if (shareData) {
-          // 更新弹窗中的过期时间
           setModalShareInfo(prev => prev ? {
             ...prev,
-            expiresAt: shareData.expiresAt
+            expiresAt: updateResult.expiresAt ?? shareData.expiresAt,
+            hasPassword: !!password || !!(shareData.passwordHash && shareData.passwordSalt)
           } : prev);
           setModalMessage(updateResult.success ? '您已创建过分享，内容已同步更新' : '您已创建过分享，可以更新或管理');
         } else {
-          // 分享已过期或不存在，清除本地记录
           clearLocalShare();
           setModalVisible(false);
           showModal('alert', '提示', '之前的分享已过期，请重新创建');
         }
       } else {
-        // 创建新分享
+        // 创建新分享（传递密码和有效期参数）
         const result = await uploadShare(
           uploadedPhotos,
           sceneConfig as unknown as Record<string, unknown>,
-          sceneConfig.gestureText
+          sceneConfig.gestureText,
+          password || undefined,  // 传递密码
+          expiry                  // 传递有效期
         );
         
         if (result.success && result.shareId) {
           const shareUrl = getShareUrl(result.shareId);
-          // 直接使用返回的数据，不需要再次 getShare
-          const expiresAt = Date.now() + 7 * 24 * 60 * 60 * 1000;
+          const expiresAt = result.expiresAt ?? (expiry === 'permanent' ? -1 : Date.now() + (expiry === '7days' ? 7 : expiry === '30days' ? 30 : 90) * 24 * 60 * 60 * 1000);
           
           setModalShareUrl(shareUrl);
           setModalShareInfo({
             shareId: result.shareId,
             expiresAt,
             canEdit: true,
+            hasPassword: !!password,
+            password: password || undefined,
             onCopy: async () => {
               try {
                 await navigator.clipboard.writeText(shareUrl);
@@ -1343,6 +1389,14 @@ export default function GrandTreeApp() {
                 // 复制失败
               }
             },
+            onCopyPassword: password ? async () => {
+              try {
+                await navigator.clipboard.writeText(password);
+                showModal('alert', '已复制', '密码已复制到剪贴板');
+              } catch {
+                // 复制失败
+              }
+            } : undefined,
             onRefresh: async () => {
               const localShareNow = getLocalShare();
               if (localShareNow) {
@@ -1367,9 +1421,13 @@ export default function GrandTreeApp() {
               }
             }
           });
-          showModal('share', '分享成功', '您的圣诞树已分享！');
           
-          // 自动复制
+          const successMessage = password 
+            ? '您的圣诞树已分享！请妥善保管访问密码。'
+            : '您的圣诞树已分享！';
+          showModal('share', '分享成功', successMessage);
+          
+          // 自动复制链接
           try {
             await navigator.clipboard.writeText(shareUrl);
           } catch {
@@ -1385,7 +1443,10 @@ export default function GrandTreeApp() {
     } finally {
       setIsSharing(false);
     }
-  }, [uploadedPhotos, sceneConfig, showModal]);
+  }, [uploadedPhotos, sceneConfig, showModal, existingShareHasPassword]);
+
+  // 保留旧的 handleShare 函数名以兼容（但现在指向 handleShareClick）
+  const handleShare = handleShareClick;
 
   return (
     <div style={{ 
@@ -1399,6 +1460,16 @@ export default function GrandTreeApp() {
       touchAction: 'none',
       cursor: demoMode ? 'none' : 'auto'
     }}>
+      {/* 密码设置弹窗 */}
+      <SharePasswordSetup
+        visible={showPasswordSetup}
+        isUpdate={!!getLocalShare()}
+        hasExistingPassword={existingShareHasPassword}
+        onConfirm={executeShare}
+        onCancel={() => setShowPasswordSetup(false)}
+        loading={isSharing}
+      />
+
       {/* 开场文案 - 时间轴模式下由时间轴控制 */}
       {!sceneConfig.timeline?.enabled && sceneConfig.intro?.enabled && !introShown && (
         <IntroOverlay

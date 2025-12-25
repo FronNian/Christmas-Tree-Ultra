@@ -1,5 +1,5 @@
-import React, { useEffect, useCallback } from 'react';
-import { X, Check, Copy, Trash2, RefreshCw, AlertCircle } from 'lucide-react';
+import React, { useEffect, useCallback, useState } from 'react';
+import { X, Check, Copy, Trash2, RefreshCw, AlertCircle, Lock, Eye, EyeOff } from 'lucide-react';
 
 // 弹窗类型
 export type ModalType = 'alert' | 'confirm' | 'share' | 'error';
@@ -27,6 +27,9 @@ export interface ModalProps {
     onCopy: () => void;
     onDelete?: () => void;
     onRefresh?: () => void;
+    hasPassword?: boolean;  // 是否已设置密码
+    password?: string;      // 新设置的密码（用于显示给用户复制）
+    onCopyPassword?: () => void;  // 复制密码
   };
 }
 
@@ -54,10 +57,18 @@ export const Modal: React.FC<ModalProps> = ({
 
   if (!visible) return null;
 
-  // 计算剩余天数
+  // 计算剩余天数（-1 表示永久有效）
   const getRemainingDays = (expiresAt: number) => {
+    if (expiresAt === -1) return -1; // 永久有效
     const days = Math.ceil((expiresAt - Date.now()) / (24 * 60 * 60 * 1000));
     return days > 0 ? days : 0;
+  };
+
+  // 格式化有效期显示
+  const formatExpiry = (expiresAt: number) => {
+    const days = getRemainingDays(expiresAt);
+    if (days === -1) return '永久有效';
+    return `还剩 ${days} 天`;
   };
 
   return (
@@ -118,6 +129,14 @@ export const Modal: React.FC<ModalProps> = ({
           </div>
         )}
 
+        {/* 密码显示区域 */}
+        {shareInfo?.password && (
+          <PasswordDisplay 
+            password={shareInfo.password} 
+            onCopy={shareInfo.onCopyPassword}
+          />
+        )}
+
         {/* 分享信息 */}
         {shareInfo && (
           <div style={shareInfoStyle}>
@@ -127,8 +146,25 @@ export const Modal: React.FC<ModalProps> = ({
             </div>
             <div style={infoRowStyle}>
               <span style={{ color: '#888' }}>有效期:</span>
-              <span style={{ color: getRemainingDays(shareInfo.expiresAt) <= 1 ? '#ff6b6b' : '#4ade80' }}>
-                还剩 {getRemainingDays(shareInfo.expiresAt)} 天
+              <span style={{ 
+                color: getRemainingDays(shareInfo.expiresAt) === -1 
+                  ? '#4ade80' 
+                  : getRemainingDays(shareInfo.expiresAt) <= 1 
+                    ? '#ff6b6b' 
+                    : '#4ade80' 
+              }}>
+                {formatExpiry(shareInfo.expiresAt)}
+              </span>
+            </div>
+            {/* 密码保护状态 */}
+            <div style={infoRowStyle}>
+              <span style={{ color: '#888' }}>密码保护:</span>
+              <span style={{ color: shareInfo.hasPassword || shareInfo.password ? '#4ade80' : '#888' }}>
+                {shareInfo.hasPassword || shareInfo.password ? (
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <Lock size={12} /> 已设置
+                  </span>
+                ) : '未设置'}
               </span>
             </div>
             
@@ -326,6 +362,91 @@ const dangerButtonStyle: React.CSSProperties = {
   backgroundColor: 'rgba(255, 107, 107, 0.2)',
   border: '1px solid rgba(255, 107, 107, 0.4)',
   color: '#ff6b6b'
+};
+
+// 密码显示子组件
+const PasswordDisplay: React.FC<{ password: string; onCopy?: () => void }> = ({ password, onCopy }) => {
+  const [showPassword, setShowPassword] = useState(false);
+  
+  return (
+    <div style={passwordDisplayContainerStyle}>
+      <div style={passwordLabelStyle}>
+        <Lock size={14} />
+        <span>访问密码（请妥善保管）</span>
+      </div>
+      <div style={passwordValueContainerStyle}>
+        <input
+          type={showPassword ? 'text' : 'password'}
+          value={password}
+          readOnly
+          style={passwordInputStyle}
+          onClick={e => (e.target as HTMLInputElement).select()}
+        />
+        <button
+          onClick={() => setShowPassword(!showPassword)}
+          style={passwordToggleStyle}
+          title={showPassword ? '隐藏密码' : '显示密码'}
+        >
+          {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+        </button>
+        {onCopy && (
+          <button
+            onClick={onCopy}
+            style={copyButtonStyle}
+            title="复制密码"
+          >
+            <Copy size={16} />
+          </button>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const passwordDisplayContainerStyle: React.CSSProperties = {
+  backgroundColor: 'rgba(74, 222, 128, 0.1)',
+  border: '1px solid rgba(74, 222, 128, 0.3)',
+  borderRadius: '8px',
+  padding: '12px',
+  marginBottom: '16px'
+};
+
+const passwordLabelStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: '6px',
+  color: '#4ade80',
+  fontSize: '12px',
+  marginBottom: '8px'
+};
+
+const passwordValueContainerStyle: React.CSSProperties = {
+  display: 'flex',
+  gap: '8px'
+};
+
+const passwordInputStyle: React.CSSProperties = {
+  flex: 1,
+  padding: '8px 12px',
+  backgroundColor: 'rgba(255, 255, 255, 0.1)',
+  border: '1px solid rgba(74, 222, 128, 0.3)',
+  borderRadius: '6px',
+  color: '#fff',
+  fontSize: '14px',
+  fontFamily: 'monospace',
+  outline: 'none'
+};
+
+const passwordToggleStyle: React.CSSProperties = {
+  padding: '8px 10px',
+  backgroundColor: 'rgba(255, 255, 255, 0.1)',
+  border: '1px solid rgba(255, 255, 255, 0.2)',
+  borderRadius: '6px',
+  color: '#888',
+  cursor: 'pointer',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center'
 };
 
 export default Modal;

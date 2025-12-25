@@ -30,6 +30,16 @@ export interface ShareData {
   expiresAt: number;
   voiceUrls?: string[];  // 语音祝福音频 Base64 数据列表
   customMusicUrl?: string; // 自定义音乐 Base64 数据
+  // 密码保护字段
+  passwordHash?: string;   // SHA-256 哈希值
+  passwordSalt?: string;   // 随机盐值
+}
+
+// 分享元数据接口（不含敏感数据，用于密码验证前）
+export interface ShareMeta {
+  id: string;
+  hasPassword: boolean;
+  expiresAt: number;
 }
 
 const MAX_SHARE_SIZE_MB = 50;
@@ -138,15 +148,48 @@ export const getEditUrl = (shareId: string, editToken: string): string => {
   return `${window.location.origin}/${shareId}/edit?token=${editToken}`;
 };
 
+// 有效期选项类型
+export type ExpiryOption = '7days' | '30days' | '90days' | 'permanent';
+
+// 根据有效期选项计算过期时间戳
+export const calculateExpiresAt = (expiry: ExpiryOption): number => {
+  const now = Date.now();
+  switch (expiry) {
+    case '7days':
+      return now + 7 * 24 * 60 * 60 * 1000;
+    case '30days':
+      return now + 30 * 24 * 60 * 60 * 1000;
+    case '90days':
+      return now + 90 * 24 * 60 * 60 * 1000;
+    case 'permanent':
+      return -1; // -1 表示永久有效
+    default:
+      return now + 7 * 24 * 60 * 60 * 1000;
+  }
+};
+
+// 检查分享是否过期
+export const isShareExpired = (expiresAt: number): boolean => {
+  if (expiresAt === -1) return false; // 永久有效
+  return expiresAt < Date.now();
+};
+
 /**
  * 上传图片到 R2（通过 base64 直接存储在 JSON 中）
  * 注意：由于前端无法直接上传到 R2，我们将图片 base64 存储在 JSON 配置中
+ * @param photos 照片数组
+ * @param config 配置对象
+ * @param message 消息
+ * @param password 可选的访问密码（4-20 字符）
+ * @param expiry 有效期选项，默认 7 天
  */
 export const uploadShare = async (
   photos: string[],
   config: Record<string, unknown>,
-  message?: string
-): Promise<{ success: boolean; shareId?: string; editToken?: string; error?: string }> => {
+  message?: string,
+  password?: string,
+  expiry: ExpiryOption = '7days'
+): Promise<{ success: boolean; shareId?: string; editToken?: string; expiresAt?: number; error?: string }> => {
   try {
     if (!R2_API_URL) {
       return { success: false, error: '上传服务未配置，请联系管理员（缺少 R2_API_URL）。' };
@@ -156,6 +199,20 @@ export const uploadShare = async (
     const photoValidation = validatePhotos(photos);
     if (!photoValidation.ok) {
       return { success: false, error: photoValidation.error };
+    }
+
+    // 验证密码格式（如果提供了密码）
+    let passwordHash: string | undefined;
+    let passwordSalt: string | undefined;
+    if (password) {
+      const { validatePasswordFormat, hashPassword } = await import('../utils/password');
+      const validation = validatePasswordFormat(password);
+      if (!validation.valid) {
+        return { success: false, error: validation.error };
+      }
+      const hashResult = await hashPassword(password);
+      passwordHash = hashResult.hash;
+      passwordSalt = hashResult.salt;
     }
 
     const localShare = getLocalShare();
@@ -171,7 +228,7 @@ export const uploadShare = async (
     const shareId = generateId();
     const editToken = generateToken();
     const now = Date.now();
-    const expiresAt = now + 7 * 24 * 60 * 60 * 1000; // 7天后过期
+    const expiresAt = calculateExpiresAt(expiry);
 
     // 提取语音数据和自定义音乐
     const { voiceUrls, customMusicUrl, cleanConfig } = extractVoiceDataFromConfig(config);
@@ -186,7 +243,9 @@ export const uploadShare = async (
       updatedAt: now,
       expiresAt,
       voiceUrls: voiceUrls.length > 0 ? voiceUrls : undefined,
-      customMusicUrl
+      customMusicUrl,
+      passwordHash,
+      passwordSalt
     };
 
     // 前端体积保护，避免超过后端限制
@@ -258,7 +317,8 @@ export const uploadShare = async (
     return {
       success: true,
       shareId,
-      editToken
+      editToken,
+      expiresAt
     };
   } catch (error) {
     console.error('Upload error:', error);
@@ -271,14 +331,23 @@ export const uploadShare = async (
 
 /**
  * 更新分享（需要验证 token）
+ * @param shareId 分享 ID
+ * @param editToken 编辑令牌
+ * @param photos 照片数组
+ * @param config 配置对象
+ * @param message 消息
+ * @param password 可选的访问密码（undefined 保持不变，null 移除密码，字符串设置新密码）
+ * @param expiry 可选的有效期（undefined 保持不变）
  */
 export const updateShare = async (
   shareId: string,
   editToken: string,
   photos: string[],
   config: Record<string, unknown>,
-  message?: string
-): Promise<{ success: boolean; error?: string }> => {
+  message?: string,
+  password?: string | null,
+  expiry?: ExpiryOption
+): Promise<{ success: boolean; expiresAt?: number; error?: string }> => {
   try {
     if (!R2_API_URL) {
       return { success: false, error: '上传服务未配置，请联系管理员（缺少 R2_API_URL）。' };
@@ -288,6 +357,20 @@ export const updateShare = async (
     const photoValidation = validatePhotos(photos);
     if (!photoValidation.ok) {
       return { success: false, error: photoValidation.error };
+    }
+
+    // 验证密码格式（如果提供了新密码）
+    let passwordHash: string | undefined;
+    let passwordSalt: string | undefined;
+    if (password) {
+      const { validatePasswordFormat, hashPassword } = await import('../utils/password');
+      const validation = validatePasswordFormat(password);
+      if (!validation.valid) {
+        return { success: false, error: validation.error };
+      }
+      const hashResult = await hashPassword(password);
+      passwordHash = hashResult.hash;
+      passwordSalt = hashResult.salt;
     }
 
     // 先获取现有数据验证 token
@@ -302,6 +385,9 @@ export const updateShare = async (
 
     const now = Date.now();
     
+    // 计算新的过期时间（如果提供了 expiry）
+    const newExpiresAt = expiry ? calculateExpiresAt(expiry) : existing.expiresAt;
+    
     // 提取语音数据和自定义音乐
     const { voiceUrls, customMusicUrl, cleanConfig } = extractVoiceDataFromConfig(config);
     
@@ -311,8 +397,12 @@ export const updateShare = async (
       config: cleanConfig,
       message,
       updatedAt: now,
+      expiresAt: newExpiresAt,
       voiceUrls: voiceUrls.length > 0 ? voiceUrls : undefined,
-      customMusicUrl
+      customMusicUrl,
+      // 处理密码：undefined 保持不变，null 移除，字符串设置新密码
+      passwordHash: password === null ? undefined : (passwordHash ?? existing.passwordHash),
+      passwordSalt: password === null ? undefined : (passwordSalt ?? existing.passwordSalt)
     };
 
     const sizeMB = getShareSizeMB(updatedData);
@@ -364,7 +454,7 @@ export const updateShare = async (
         throw new Error(`更新失败: ${response.status}${serverMessage ? ` - ${serverMessage}` : ''}`);
       }
 
-      return { success: true };
+      return { success: true, expiresAt: newExpiresAt };
     } catch (fetchError) {
       clearTimeout(timeoutId);
       if ((fetchError as Error).name === 'AbortError') {
@@ -399,8 +489,8 @@ export const getShare = async (shareId: string): Promise<ShareData | null> => {
 
     const data: ShareData = await response.json();
     
-    // 检查是否过期
-    if (data.expiresAt < Date.now()) {
+    // 检查是否过期（-1 表示永久有效）
+    if (isShareExpired(data.expiresAt)) {
       return null;
     }
 
@@ -411,6 +501,89 @@ export const getShare = async (shareId: string): Promise<ShareData | null> => {
   } catch (error) {
     console.error('Get share error:', error);
     return null;
+  }
+};
+
+/**
+ * 获取分享元数据（不含敏感数据）
+ * 用于密码验证前检查是否需要密码
+ */
+export const getShareMeta = async (shareId: string): Promise<ShareMeta | null> => {
+  try {
+    const url = `${R2_PUBLIC_URL}/shares/${shareId}.json?ts=${Date.now()}`;
+    const response = await fetch(url, { cache: 'no-store' });
+    
+    if (!response.ok) {
+      if (response.status === 404) {
+        return null;
+      }
+      throw new Error(`获取失败: ${response.status}`);
+    }
+
+    const data: ShareData = await response.json();
+    
+    // 检查是否过期（-1 表示永久有效）
+    if (isShareExpired(data.expiresAt)) {
+      return null;
+    }
+
+    // 只返回元数据，不包含照片、配置等敏感数据
+    return {
+      id: data.id,
+      hasPassword: !!(data.passwordHash && data.passwordSalt),
+      expiresAt: data.expiresAt
+    };
+  } catch (error) {
+    console.error('Get share meta error:', error);
+    return null;
+  }
+};
+
+/**
+ * 验证分享密码
+ * @param shareId 分享 ID
+ * @param password 用户输入的密码
+ * @returns 验证结果
+ */
+export const verifySharePassword = async (
+  shareId: string,
+  password: string
+): Promise<{ valid: boolean; error?: string }> => {
+  try {
+    const url = `${R2_PUBLIC_URL}/shares/${shareId}.json?ts=${Date.now()}`;
+    const response = await fetch(url, { cache: 'no-store' });
+    
+    if (!response.ok) {
+      if (response.status === 404) {
+        return { valid: false, error: '分享不存在' };
+      }
+      return { valid: false, error: '获取分享失败' };
+    }
+
+    const data: ShareData = await response.json();
+    
+    // 检查是否过期（-1 表示永久有效）
+    if (isShareExpired(data.expiresAt)) {
+      return { valid: false, error: '分享已过期' };
+    }
+
+    // 检查是否有密码保护
+    if (!data.passwordHash || !data.passwordSalt) {
+      return { valid: true }; // 无密码保护，直接通过
+    }
+
+    // 动态导入密码验证函数
+    const { verifyPassword } = await import('../utils/password');
+    const isValid = await verifyPassword(password, data.passwordHash, data.passwordSalt);
+    
+    if (isValid) {
+      return { valid: true };
+    } else {
+      return { valid: false, error: '密码错误' };
+    }
+  } catch (error) {
+    console.error('Verify password error:', error);
+    return { valid: false, error: '验证失败，请重试' };
   }
 };
 

@@ -1,14 +1,15 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { Canvas } from '@react-three/fiber';
 import * as THREE from 'three';
-import { Experience, GestureController, TitleOverlay, WelcomeTutorial, IntroOverlay, CenterPhoto, LyricsDisplay, GiftStepOverlay, VoicePlayer, LetterStepOverlay } from '../components';
+import { Experience, GestureController, TitleOverlay, WelcomeTutorial, IntroOverlay, CenterPhoto, LyricsDisplay, GiftStepOverlay, VoicePlayer, LetterStepOverlay, PasswordDialog } from '../components';
 import { CHRISTMAS_MUSIC_URL } from '../config';
 import { THEME_PRESETS } from '../config/themes';
 import { isMobile, isTablet, getDefaultSceneConfig, toggleFullscreen, isFullscreen, isFullscreenSupported, enterFullscreen, lockLandscape, getOptimalWebGLConfig } from '../utils/helpers';
 import { sanitizeShareConfig, sanitizePhotos, sanitizeText } from '../utils/sanitize';
 import { createAudioAnalyser, startAudioLevelUpdate, clearAudioCache } from '../utils/audioAnalysis';
-import { getShare } from '../lib/r2';
-import type { ShareData } from '../lib/r2';
+import { checkVerification, saveVerification } from '../utils/sessionAuth';
+import { getShare, getShareMeta } from '../lib/r2';
+import type { ShareData, ShareMeta } from '../lib/r2';
 import type { SceneState, SceneConfig, PhotoScreenPosition } from '../types';
 import { PRESET_MUSIC } from '../types';
 import { useTimeline } from '../hooks/useTimeline';
@@ -55,6 +56,11 @@ export default function SharePage({ shareId }: SharePageProps) {
   const [shareData, setShareData] = useState<ShareData | null>(null);
   const assetTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const photoScreenPositionsRef = useRef<PhotoScreenPosition[]>([]);
+
+  // 密码保护状态
+  const [, setShareMeta] = useState<ShareMeta | null>(null);
+  const [needsPassword, setNeedsPassword] = useState(false);
+  const [passwordVerified, setPasswordVerified] = useState(false);
 
   // WebGL 兼容性配置（只计算一次）
   const glConfig = useMemo(() => {
@@ -215,6 +221,39 @@ export default function SharePage({ shareId }: SharePageProps) {
         setLoadingProgress(prev => Math.min(prev + 5, 30));
       }, 100);
       
+      // 第一阶段：检查 sessionStorage 是否已验证
+      const alreadyVerified = checkVerification(shareId);
+      
+      if (alreadyVerified) {
+        // 已验证，直接加载完整数据
+        setPasswordVerified(true);
+        setNeedsPassword(false);
+      } else {
+        // 未验证，先获取元数据检查是否需要密码
+        setLoadingStage('正在检查访问权限...');
+        const meta = await getShareMeta(shareId);
+        clearInterval(progressTimer);
+        
+        if (!meta) {
+          setError('分享不存在或已过期');
+          setLoading(false);
+          return;
+        }
+        
+        setShareMeta(meta);
+        
+        if (meta.hasPassword) {
+          // 需要密码，显示密码输入框
+          setNeedsPassword(true);
+          setLoading(false);
+          return;
+        }
+        
+        // 无密码保护，继续加载
+        setPasswordVerified(true);
+      }
+      
+      // 第二阶段：加载完整分享数据
       const data = await getShare(shareId);
       clearInterval(progressTimer);
       
@@ -1164,6 +1203,135 @@ export default function SharePage({ shareId }: SharePageProps) {
     );
   }
 
+  // 密码验证成功后加载完整数据
+  const handlePasswordSuccess = async () => {
+    setNeedsPassword(false);
+    setPasswordVerified(true);
+    saveVerification(shareId);
+    
+    // 开始加载完整数据
+    setLoading(true);
+    setLoadingProgress(30);
+    setLoadingStage('密码验证成功，正在加载内容...');
+    
+    const data = await getShare(shareId);
+    
+    if (!data) {
+      setError('分享不存在或已过期');
+      setLoading(false);
+      return;
+    }
+    
+    setLoadingProgress(40);
+    setLoadingStage('正在解析配置...');
+    
+    // 安全验证：清理配置和照片数据
+    const sanitizedConfig = sanitizeShareConfig(data.config);
+    const sanitizedPhotos = sanitizePhotos(data.photos);
+    const sanitizedMessage = sanitizeText(data.message, 100);
+    
+    setLoadingProgress(50);
+    setLoadingStage(`正在加载 ${sanitizedPhotos.length} 张照片...`);
+    
+    // 预加载照片
+    if (sanitizedPhotos.length > 0) {
+      const loadPromises = sanitizedPhotos.map((photo, index) => {
+        return new Promise<void>((resolve) => {
+          const img = new Image();
+          img.onload = () => {
+            setLoadingProgress(50 + Math.floor((index + 1) / sanitizedPhotos.length * 30));
+            resolve();
+          };
+          img.onerror = () => resolve();
+          img.src = photo;
+        });
+      });
+      await Promise.all(loadPromises);
+    }
+    
+    setLoadingProgress(85);
+    setLoadingStage('正在初始化 3D 场景...');
+    
+    // 更新分享数据
+    setShareData({
+      ...data,
+      config: sanitizedConfig,
+      photos: sanitizedPhotos,
+      message: sanitizedMessage
+    });
+    
+    // 应用配置
+    if (sanitizedConfig) {
+      const cfg = sanitizedConfig as Partial<SceneConfig>;
+      setSceneConfig(prev => deepMergeConfig(prev as unknown as Record<string, unknown>, cfg as unknown as Record<string, unknown>) as unknown as SceneConfig);
+      
+      if (cfg.preloadText) {
+        setHideTree(true);
+        setShowText(true);
+        setPreloadTextPlayed(true);
+      }
+      
+      if (cfg.timeline?.enabled && cfg.timeline.steps && cfg.timeline.steps.length > 0) {
+        setShowSoundPrompt(true);
+      }
+      
+      // 预加载音乐
+      setLoadingStage('正在加载背景音乐...');
+      const musicConfig = cfg.music;
+      let musicUrl = CHRISTMAS_MUSIC_URL;
+      
+      if (musicConfig) {
+        if (musicConfig.selected === 'custom' && musicConfig.customUrl) {
+          musicUrl = musicConfig.customUrl;
+        } else {
+          const preset = PRESET_MUSIC.find(m => m.id === musicConfig.selected);
+          if (preset) musicUrl = preset.url;
+        }
+      }
+      
+      const preloadAudio = new Audio();
+      preloadAudio.preload = 'auto';
+      preloadAudio.src = musicUrl;
+      
+      const musicTimeout = setTimeout(() => {
+        setMusicReady(true);
+      }, 5000);
+      
+      preloadAudio.addEventListener('canplaythrough', () => {
+        clearTimeout(musicTimeout);
+        setLoadingProgress(95);
+        setMusicReady(true);
+      }, { once: true });
+      
+      preloadAudio.addEventListener('error', () => {
+        clearTimeout(musicTimeout);
+        setMusicReady(true);
+      }, { once: true });
+      
+      preloadAudio.load();
+    } else {
+      setMusicReady(true);
+    }
+    
+    setLoadingProgress(90);
+    setLoadingStage('等待场景资源加载...');
+    
+    if (assetTimeoutRef.current) clearTimeout(assetTimeoutRef.current);
+    assetTimeoutRef.current = setTimeout(() => {
+      setAssetsReady(true);
+    }, 5000);
+  };
+
+  // 需要密码验证
+  if (needsPassword && !passwordVerified) {
+    return (
+      <PasswordDialog
+        shareId={shareId}
+        onSuccess={handlePasswordSuccess}
+      />
+    );
+  }
+
   // 错误
   if (error || !shareData) {
     return (
@@ -1189,6 +1357,7 @@ export default function SharePage({ shareId }: SharePageProps) {
       </div>
     );
   }
+
 
   return (
     <div style={{ width: '100vw', height: '100dvh', backgroundColor: '#000', position: 'fixed', top: 0, left: 0, overflow: 'hidden', touchAction: 'none' }}>
