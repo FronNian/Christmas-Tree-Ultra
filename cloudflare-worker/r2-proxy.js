@@ -197,7 +197,8 @@ export default {
           }
         });
 
-        const publicHost = env.R2_PUBLIC_HOST;
+        // 使用环境变量或回退到请求的域名
+        const publicHost = env.R2_PUBLIC_HOST || url.host;
         const publicUrl = `https://${publicHost}/${key}`;
 
         return jsonResponse({
