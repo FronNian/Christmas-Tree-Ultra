@@ -260,72 +260,100 @@ export const uploadShare = async (
 
     console.log(`Uploading share: ${sizeMB.toFixed(2)} MB`);
 
-    // 上传到 R2（通过 Worker 代理）- 添加超时控制
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 240000); // 240秒超时
+    // 上传到 R2（通过 Worker 代理）- 添加超时控制和重试
+    const maxRetries = 2;
+    let lastError: Error | null = null;
     
-    try {
-      const response = await fetch(`${R2_API_URL}/shares/${shareId}.json`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(shareData),
-        signal: controller.signal
-      });
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 240000); // 240秒超时
       
-      clearTimeout(timeoutId);
+      try {
+        const response = await fetch(`${R2_API_URL}/shares/${shareId}.json`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(shareData),
+          signal: controller.signal
+        });
+        
+        clearTimeout(timeoutId);
 
-      if (!response.ok) {
-        // 400/413 等前端可识别错误，返回用户提示
-        let serverMessage = '';
-        try {
-          // 优先解析 JSON，携带 details
-          const text = await response.text();
-          serverMessage = text;
+        if (!response.ok) {
+          // 400/413 等前端可识别错误，返回用户提示
+          let serverMessage = '';
           try {
-            const parsed = JSON.parse(text);
-            if (parsed?.error || parsed?.details) {
-              const details = Array.isArray(parsed.details) ? parsed.details.join('; ') : '';
-              serverMessage = `${parsed.error || ''}${details ? `: ${details}` : ''}`;
+            const text = await response.text();
+            serverMessage = text;
+            try {
+              const parsed = JSON.parse(text);
+              if (parsed?.error || parsed?.details) {
+                const details = Array.isArray(parsed.details) ? parsed.details.join('; ') : '';
+                serverMessage = `${parsed.error || ''}${details ? `: ${details}` : ''}`;
+              }
+            } catch {
+              // 非 JSON，保留原文
             }
           } catch {
-            // 非 JSON，保留原文
+            // ignore
           }
-        } catch {
-          // ignore
+          if (response.status === 400) {
+            return { success: false, error: serverMessage || '上传失败：请求格式或参数错误（400）。' };
+          }
+          throw new Error(`上传失败: ${response.status}${serverMessage ? ` - ${serverMessage}` : ''}`);
         }
-        if (response.status === 400) {
-          return { success: false, error: serverMessage || '上传失败：请求格式或参数错误（400）。' };
+        
+        // 上传成功，保存到本地并返回
+        saveLocalShare({
+          shareId,
+          editToken,
+          createdAt: now
+        });
+
+        return {
+          success: true,
+          shareId,
+          editToken,
+          expiresAt
+        };
+      } catch (fetchError) {
+        clearTimeout(timeoutId);
+        lastError = fetchError as Error;
+        
+        if (lastError.name === 'AbortError') {
+          return { success: false, error: '上传超时，请检查网络后重试。如果数据较大，可能需要更长时间。' };
         }
-        throw new Error(`上传失败: ${response.status}${serverMessage ? ` - ${serverMessage}` : ''}`);
+        
+        // 如果是网络错误且还有重试次数，等待后重试
+        if (attempt < maxRetries && (lastError.message === 'Failed to fetch' || lastError.message.includes('NetworkError'))) {
+          console.log(`Upload attempt ${attempt + 1} failed, retrying in 2 seconds...`);
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          continue;
+        }
+        
+        throw lastError;
       }
-    } catch (fetchError) {
-      clearTimeout(timeoutId);
-      if ((fetchError as Error).name === 'AbortError') {
-        return { success: false, error: '上传超时，请检查网络后重试。如果数据较大，可能需要更长时间。' };
-      }
-      throw fetchError;
     }
-
-    // 保存到本地
-    saveLocalShare({
-      shareId,
-      editToken,
-      createdAt: now
-    });
-
-    return {
-      success: true,
-      shareId,
-      editToken,
-      expiresAt
-    };
+    
+    // 所有重试都失败
+    throw lastError || new Error('上传失败');
   } catch (error) {
     console.error('Upload error:', error);
+    // 提供更友好的错误提示
+    let errorMessage = '上传失败';
+    if (error instanceof Error) {
+      if (error.message === 'Failed to fetch' || error.message.includes('NetworkError')) {
+        errorMessage = '网络连接失败，请检查网络后重试。如果问题持续，可能是服务器暂时不可用。';
+      } else if (error.message.includes('CORS')) {
+        errorMessage = '服务器配置错误，请联系管理员。';
+      } else {
+        errorMessage = error.message;
+      }
+    }
     return {
       success: false,
-      error: error instanceof Error ? error.message : '上传失败'
+      error: errorMessage
     };
   }
 };
@@ -464,9 +492,20 @@ export const updateShare = async (
     }
   } catch (error) {
     console.error('Update error:', error);
+    // 提供更友好的错误提示
+    let errorMessage = '更新失败';
+    if (error instanceof Error) {
+      if (error.message === 'Failed to fetch' || error.message.includes('NetworkError')) {
+        errorMessage = '网络连接失败，请检查网络后重试。如果问题持续，可能是服务器暂时不可用。';
+      } else if (error.message.includes('CORS')) {
+        errorMessage = '服务器配置错误，请联系管理员。';
+      } else {
+        errorMessage = error.message;
+      }
+    }
     return {
       success: false,
-      error: error instanceof Error ? error.message : '更新失败'
+      error: errorMessage
     };
   }
 };
