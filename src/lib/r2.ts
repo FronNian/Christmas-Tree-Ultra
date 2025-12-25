@@ -286,7 +286,7 @@ export const uploadShare = async (
     
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 240000); // 240秒超时
+      const timeoutId = setTimeout(() => controller.abort(), 600000); // 10分钟超时
       
       try {
         const response = await fetch(`${R2_API_URL}/shares/${shareId}.json`, {
@@ -469,7 +469,7 @@ export const updateShare = async (
     
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 240000); // 240秒超时
+      const timeoutId = setTimeout(() => controller.abort(), 600000); // 10分钟超时
       
       try {
         const response = await fetch(`${R2_API_URL}/shares/${shareId}.json`, {
