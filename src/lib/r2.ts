@@ -44,6 +44,21 @@ export interface ShareMeta {
   expiresAt?: number;  // 可选，向后兼容旧数据
 }
 
+// 获取分享错误类型
+export type ShareErrorType = 'not_found' | 'expired' | 'network' | null;
+
+// 获取分享结果（带错误类型）
+export interface GetShareResult {
+  data: ShareData | null;
+  error: ShareErrorType;
+}
+
+// 获取分享元数据结果（带错误类型）
+export interface GetShareMetaResult {
+  data: ShareMeta | null;
+  error: ShareErrorType;
+}
+
 const MAX_SHARE_SIZE_MB = 50;
 
 const getShareSizeMB = (data: ShareData): number => {
@@ -1133,4 +1148,69 @@ export const restoreVoiceDataToConfig = (
   }
   
   return restoredConfig;
+};
+
+/**
+ * 获取分享数据（带错误类型）
+ */
+export const getShareWithError = async (shareId: string): Promise<GetShareResult> => {
+  try {
+    const url = `${R2_PUBLIC_URL}/shares/${shareId}.json?ts=${Date.now()}`;
+    const response = await fetch(url, { cache: 'no-store' });
+
+    if (!response.ok) {
+      if (response.status === 404) {
+        return { data: null, error: 'not_found' };
+      }
+      return { data: null, error: 'network' };
+    }
+
+    const data: ShareData = await response.json();
+
+    if (isShareExpired(data.expiresAt)) {
+      return { data: null, error: 'expired' };
+    }
+
+    data.config = restoreVoiceDataToConfig(data.config, data.voiceUrls, data.customMusicUrl);
+
+    return { data, error: null };
+  } catch (error) {
+    console.error('Get share error:', error);
+    return { data: null, error: 'network' };
+  }
+};
+
+/**
+ * 获取分享元数据（带错误类型）
+ */
+export const getShareMetaWithError = async (shareId: string): Promise<GetShareMetaResult> => {
+  try {
+    const url = `${R2_PUBLIC_URL}/shares/${shareId}.json?ts=${Date.now()}`;
+    const response = await fetch(url, { cache: 'no-store' });
+
+    if (!response.ok) {
+      if (response.status === 404) {
+        return { data: null, error: 'not_found' };
+      }
+      return { data: null, error: 'network' };
+    }
+
+    const data: ShareData = await response.json();
+
+    if (isShareExpired(data.expiresAt)) {
+      return { data: null, error: 'expired' };
+    }
+
+    return {
+      data: {
+        id: data.id,
+        hasPassword: !!(data.passwordHash && data.passwordSalt),
+        expiresAt: data.expiresAt
+      },
+      error: null
+    };
+  } catch (error) {
+    console.error('Get share meta error:', error);
+    return { data: null, error: 'network' };
+  }
 };
