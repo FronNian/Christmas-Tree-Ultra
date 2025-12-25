@@ -29,7 +29,7 @@ export interface ShareData {
   message?: string;
   createdAt: number;
   updatedAt: number;
-  expiresAt: number;
+  expiresAt?: number;  // 可选，向后兼容旧数据（undefined/0/-1 视为永久有效）
   voiceUrls?: string[];  // 语音祝福音频 Base64 数据列表
   customMusicUrl?: string; // 自定义音乐 Base64 数据
   // 密码保护字段
@@ -41,7 +41,7 @@ export interface ShareData {
 export interface ShareMeta {
   id: string;
   hasPassword: boolean;
-  expiresAt: number;
+  expiresAt?: number;  // 可选，向后兼容旧数据
 }
 
 const MAX_SHARE_SIZE_MB = 50;
@@ -171,8 +171,13 @@ export const calculateExpiresAt = (expiry: ExpiryOption): number => {
 };
 
 // 检查分享是否过期
-export const isShareExpired = (expiresAt: number): boolean => {
-  if (expiresAt === -1) return false; // 永久有效
+export const isShareExpired = (expiresAt: number | undefined): boolean => {
+  // 向后兼容：旧数据可能没有 expiresAt 字段，视为永久有效
+  if (expiresAt === undefined || expiresAt === null) return false;
+  // -1 表示永久有效
+  if (expiresAt === -1) return false;
+  // 0 或无效值视为永久有效（向后兼容）
+  if (expiresAt === 0 || isNaN(expiresAt)) return false;
   return expiresAt < Date.now();
 };
 
@@ -920,11 +925,19 @@ export const refreshShareExpiry = async (
   editToken: string
 ): Promise<{ success: boolean; newExpiresAt?: number; error?: string }> => {
   try {
-    const existing = await getShare(shareId);
-    if (!existing) {
-      return { success: false, error: '分享不存在' };
+    // 直接获取数据，不检查过期状态（允许续期已过期的分享）
+    const url = `${R2_PUBLIC_URL}/shares/${shareId}.json?ts=${Date.now()}`;
+    const getResponse = await fetch(url, { cache: 'no-store' });
+
+    if (!getResponse.ok) {
+      if (getResponse.status === 404) {
+        return { success: false, error: '分享不存在' };
+      }
+      return { success: false, error: `获取分享失败: ${getResponse.status}` };
     }
-    
+
+    const existing: ShareData = await getResponse.json();
+
     if (existing.editToken !== editToken) {
       return { success: false, error: '无权操作此分享' };
     }
@@ -937,7 +950,7 @@ export const refreshShareExpiry = async (
 
     const now = Date.now();
     const newExpiresAt = now + 7 * 24 * 60 * 60 * 1000;
-    
+
     const updatedData = {
       ...existing,
       expiresAt: newExpiresAt,
@@ -945,14 +958,14 @@ export const refreshShareExpiry = async (
       refreshCount: refreshCount + 1
     };
 
-    const response = await fetch(`${R2_API_URL}/shares/${shareId}.json`, {
+    const putResponse = await fetch(`${R2_API_URL}/shares/${shareId}.json`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updatedData)
     });
 
-    if (!response.ok) {
-      throw new Error(`续期失败: ${response.status}`);
+    if (!putResponse.ok) {
+      throw new Error(`续期失败: ${putResponse.status}`);
     }
 
     return { success: true, newExpiresAt };
@@ -973,21 +986,31 @@ export const deleteShare = async (
   editToken: string
 ): Promise<{ success: boolean; error?: string }> => {
   try {
-    const existing = await getShare(shareId);
-    if (!existing) {
+    // 直接获取数据，不检查过期状态（允许删除已过期的分享）
+    const url = `${R2_PUBLIC_URL}/shares/${shareId}.json?ts=${Date.now()}`;
+    const response = await fetch(url, { cache: 'no-store' });
+
+    if (!response.ok) {
+      if (response.status === 404) {
+        // 分享已不存在，清除本地记录
+        clearLocalShare();
+        return { success: true };
+      }
       return { success: false, error: '分享不存在' };
     }
-    
+
+    const existing: ShareData = await response.json();
+
     if (existing.editToken !== editToken) {
       return { success: false, error: '无权删除此分享' };
     }
 
-    const response = await fetch(`${R2_API_URL}/shares/${shareId}.json?token=${encodeURIComponent(editToken)}`, {
+    const deleteResponse = await fetch(`${R2_API_URL}/shares/${shareId}.json?token=${encodeURIComponent(editToken)}`, {
       method: 'DELETE'
     });
 
-    if (!response.ok && response.status !== 404) {
-      throw new Error(`删除失败: ${response.status}`);
+    if (!deleteResponse.ok && deleteResponse.status !== 404) {
+      throw new Error(`删除失败: ${deleteResponse.status}`);
     }
 
     // 清除本地记录

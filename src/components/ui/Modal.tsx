@@ -22,7 +22,7 @@ export interface ModalProps {
   // 分享弹窗专用
   shareInfo?: {
     shareId: string;
-    expiresAt: number;
+    expiresAt?: number;  // 可选，向后兼容旧数据（undefined/0/-1 视为永久有效）
     canEdit: boolean;
     onCopy: () => void;
     onDelete?: () => void;
@@ -57,15 +57,18 @@ export const Modal: React.FC<ModalProps> = ({
 
   if (!visible) return null;
 
-  // 计算剩余天数（-1 表示永久有效）
-  const getRemainingDays = (expiresAt: number) => {
-    if (expiresAt === -1) return -1; // 永久有效
+  // 计算剩余天数（-1、0、undefined 表示永久有效，向后兼容旧数据）
+  const getRemainingDays = (expiresAt: number | undefined) => {
+    // 向后兼容：undefined、null、0 或 -1 都视为永久有效
+    if (expiresAt === undefined || expiresAt === null || expiresAt === 0 || expiresAt === -1 || isNaN(expiresAt)) {
+      return -1; // 永久有效
+    }
     const days = Math.ceil((expiresAt - Date.now()) / (24 * 60 * 60 * 1000));
     return days > 0 ? days : 0;
   };
 
   // 格式化有效期显示
-  const formatExpiry = (expiresAt: number) => {
+  const formatExpiry = (expiresAt: number | undefined) => {
     const days = getRemainingDays(expiresAt);
     if (days === -1) return '永久有效';
     return `还剩 ${days} 天`;

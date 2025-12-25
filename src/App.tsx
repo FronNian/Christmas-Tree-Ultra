@@ -1123,7 +1123,7 @@ export default function GrandTreeApp() {
   const [modalShareUrl, setModalShareUrl] = useState('');
   const [modalShareInfo, setModalShareInfo] = useState<{
     shareId: string;
-    expiresAt: number;
+    expiresAt?: number;  // 可选，向后兼容旧数据
     canEdit: boolean;
     onCopy: () => void;
     onDelete?: () => void;
