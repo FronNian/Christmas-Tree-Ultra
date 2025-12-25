@@ -399,11 +399,13 @@ interface SettingsPanelProps {
   photoPaths?: string[];  // 照片URL数组（用于预览）
   onTimelinePreview?: () => void;  // 时间轴预览回调
   isTimelinePlaying?: boolean;  // 时间轴是否正在播放
+  isSharePage?: boolean;  // 是否为分享页（隐藏部分编辑功能）
 }
 
 export const SettingsPanel = ({ 
   config, onChange, onClose, aiEnabled, onAiToggle, onAvatarUpload,
-  photoCount = 0, photoPaths = [], onTimelinePreview, isTimelinePlaying = false
+  photoCount = 0, photoPaths = [], onTimelinePreview, isTimelinePlaying = false,
+  isSharePage = false
 }: SettingsPanelProps) => {
   const mobile = isMobile();
 
@@ -649,7 +651,9 @@ export const SettingsPanel = ({
         paddingBottom: useFullScreen ? '12px' : '0',
         borderBottom: useFullScreen ? '1px solid rgba(255,215,0,0.2)' : 'none'
       }}>
-        <span style={{ fontSize: '16px', fontWeight: 'bold', color: '#FFD700', display: 'flex', alignItems: 'center', gap: '6px' }}><Settings size={18} /> 场景设置</span>
+        <span style={{ fontSize: '16px', fontWeight: 'bold', color: '#FFD700', display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <Settings size={18} /> {isSharePage ? '查看设置' : '场景设置'}
+        </span>
         <button 
           onClick={onClose} 
           style={{ 

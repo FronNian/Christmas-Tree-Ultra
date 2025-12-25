@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { Canvas } from '@react-three/fiber';
 import * as THREE from 'three';
-import { Experience, GestureController, TitleOverlay, WelcomeTutorial, IntroOverlay, CenterPhoto, LyricsDisplay, GiftStepOverlay, VoicePlayer, LetterStepOverlay, PasswordDialog } from '../components';
+import { Experience, GestureController, TitleOverlay, WelcomeTutorial, IntroOverlay, CenterPhoto, LyricsDisplay, GiftStepOverlay, VoicePlayer, LetterStepOverlay, PasswordDialog, SettingsPanel } from '../components';
 import { CHRISTMAS_MUSIC_URL } from '../config';
 import { THEME_PRESETS } from '../config/themes';
 import { isMobile, isTablet, getDefaultSceneConfig, toggleFullscreen, isFullscreen, isFullscreenSupported, enterFullscreen, lockLandscape, getOptimalWebGLConfig } from '../utils/helpers';
@@ -13,7 +13,7 @@ import type { ShareData, ShareMeta } from '../lib/r2';
 import type { SceneState, SceneConfig, PhotoScreenPosition } from '../types';
 import { PRESET_MUSIC } from '../types';
 import { useTimeline } from '../hooks/useTimeline';
-import { Volume2, VolumeX, TreePine, Sparkles, Loader, Frown, HelpCircle, Play, Maximize, Minimize, RotateCcw } from 'lucide-react';
+import { Volume2, VolumeX, TreePine, Sparkles, Loader, Frown, HelpCircle, Play, Maximize, Minimize, RotateCcw, Settings } from 'lucide-react';
 
 // 深度合并配置对象
 function deepMergeConfig<T extends Record<string, unknown>>(target: T, source: Partial<T>): T {
@@ -126,6 +126,10 @@ export default function SharePage({ shareId }: SharePageProps) {
   const [showSoundPrompt, setShowSoundPrompt] = useState(false);
   const [soundPromptDismissed, setSoundPromptDismissed] = useState(false);
 
+  // 设置面板状态
+  const [showSettings, setShowSettings] = useState(false);
+  const [aiEnabled, setAiEnabled] = useState(true);
+
   // Refs
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioAnalyserRef = useRef<ReturnType<typeof createAudioAnalyser> | null>(null);
@@ -220,6 +224,45 @@ export default function SharePage({ shareId }: SharePageProps) {
       const progressTimer = setInterval(() => {
         setLoadingProgress(prev => Math.min(prev + 5, 30));
       }, 100);
+
+      // 重试配置
+      const MAX_RETRIES = 3;
+      const RETRY_DELAY = 2000; // 重试间隔 2 秒
+      const REQUEST_TIMEOUT = 60000; // 单次请求超时 60 秒
+
+      // 带重试的请求函数
+      const fetchWithRetry = async <T,>(
+        fetchFn: () => Promise<T | null>,
+        stageName: string
+      ): Promise<{ data: T | null; timedOut: boolean }> => {
+        for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+          if (attempt > 0) {
+            setLoadingStage(`${stageName}（重试 ${attempt}/${MAX_RETRIES - 1}）...`);
+            await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
+          }
+          
+          let timedOut = false;
+          const dataPromise = fetchFn();
+          const timeoutPromise = new Promise<null>((resolve) => 
+            setTimeout(() => { timedOut = true; resolve(null); }, REQUEST_TIMEOUT)
+          );
+          
+          const result = await Promise.race([dataPromise, timeoutPromise]);
+          
+          if (result !== null) {
+            return { data: result, timedOut: false };
+          }
+          
+          // 如果是超时，继续重试；如果是其他错误（如 404），不重试
+          if (!timedOut) {
+            return { data: null, timedOut: false };
+          }
+          
+          console.log(`Request timeout, attempt ${attempt + 1}/${MAX_RETRIES}`);
+        }
+        
+        return { data: null, timedOut: true };
+      };
       
       // 第一阶段：检查 sessionStorage 是否已验证
       const alreadyVerified = checkVerification(shareId);
@@ -231,18 +274,26 @@ export default function SharePage({ shareId }: SharePageProps) {
       } else {
         // 未验证，先获取元数据检查是否需要密码
         setLoadingStage('正在检查访问权限...');
-        const meta = await getShareMeta(shareId);
+        
+        const metaResult = await fetchWithRetry(
+          () => getShareMeta(shareId),
+          '正在检查访问权限'
+        );
         clearInterval(progressTimer);
         
-        if (!meta) {
-          setError('分享不存在或已过期');
+        if (!metaResult.data) {
+          if (metaResult.timedOut) {
+            setError('请求超时，请检查网络后刷新重试');
+          } else {
+            setError('分享不存在或已过期');
+          }
           setLoading(false);
           return;
         }
         
-        setShareMeta(meta);
+        setShareMeta(metaResult.data);
         
-        if (meta.hasPassword) {
+        if (metaResult.data.hasPassword) {
           // 需要密码，显示密码输入框
           setNeedsPassword(true);
           setLoading(false);
@@ -254,14 +305,25 @@ export default function SharePage({ shareId }: SharePageProps) {
       }
       
       // 第二阶段：加载完整分享数据
-      const data = await getShare(shareId);
+      setLoadingStage('正在加载分享数据...');
+      
+      const dataResult = await fetchWithRetry(
+        () => getShare(shareId),
+        '正在加载分享数据'
+      );
       clearInterval(progressTimer);
       
-      if (!data) {
-        setError('分享不存在或已过期');
+      if (!dataResult.data) {
+        if (dataResult.timedOut) {
+          setError('加载超时，请检查网络后刷新重试');
+        } else {
+          setError('分享不存在或已过期');
+        }
         setLoading(false);
         return;
       }
+      
+      const data = dataResult.data;
       
       setLoadingProgress(40);
       setLoadingStage('正在解析配置...');
@@ -1468,13 +1530,13 @@ export default function SharePage({ shareId }: SharePageProps) {
         </Canvas>
       </div>
 
-      {/* 手势控制器 - 教程显示时禁用 */}
+      {/* 手势控制器 - 教程显示时或 AI 关闭时禁用 */}
       <GestureController
         onGesture={handleGestureChange}
         onMove={handleRotationSpeedChange}
         onStatus={setAiStatus}
         debugMode={false}
-        enabled={!showTutorial}
+        enabled={aiEnabled && !showTutorial}
         isPhotoSelected={selectedPhotoIndex !== null}
         photoLocked={photoLocked}
         onPinch={handlePinch}
@@ -1513,6 +1575,10 @@ export default function SharePage({ shareId }: SharePageProps) {
 
         <button onClick={() => setShowTutorial(true)} style={buttonStyle(false, mobile)} title="使用帮助">
           <HelpCircle size={18} />
+        </button>
+
+        <button onClick={() => setShowSettings(true)} style={buttonStyle(false, mobile)} title="设置">
+          <Settings size={18} />
         </button>
 
         <button
@@ -1621,6 +1687,20 @@ export default function SharePage({ shareId }: SharePageProps) {
 
       {/* 使用教程 */}
       {showTutorial && <WelcomeTutorial onClose={() => setShowTutorial(false)} isSharePage gestureConfig={sceneConfig.gestures} />}
+
+      {/* 设置面板 - 分享页简化版 */}
+      {showSettings && (
+        <SettingsPanel
+          config={sceneConfig}
+          onChange={setSceneConfig}
+          onClose={() => setShowSettings(false)}
+          aiEnabled={aiEnabled}
+          onAiToggle={setAiEnabled}
+          photoCount={shareData?.photos?.length || 0}
+          photoPaths={shareData?.photos || []}
+          isSharePage
+        />
+      )}
 
       {/* 全屏横屏提示 - 移动端/平板首次访问 */}
       {showFullscreenPrompt && !showTutorial && !showSoundPrompt && (
