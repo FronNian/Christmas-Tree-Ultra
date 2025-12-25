@@ -443,53 +443,71 @@ export const updateShare = async (
 
     console.log(`Updating share: ${sizeMB.toFixed(2)} MB`);
 
-    // 添加超时控制
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 240000); // 240秒超时
-
-    try {
-      const response = await fetch(`${R2_API_URL}/shares/${shareId}.json`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(updatedData),
-        signal: controller.signal
-      });
+    // 更新到 R2（通过 Worker 代理）- 添加超时控制和重试
+    const maxRetries = 2;
+    let lastError: Error | null = null;
+    
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 240000); // 240秒超时
       
-      clearTimeout(timeoutId);
+      try {
+        const response = await fetch(`${R2_API_URL}/shares/${shareId}.json`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(updatedData),
+          signal: controller.signal
+        });
+        
+        clearTimeout(timeoutId);
 
-      if (!response.ok) {
-        let serverMessage = '';
-        try {
-          const text = await response.text();
-          serverMessage = text;
+        if (!response.ok) {
+          let serverMessage = '';
           try {
-            const parsed = JSON.parse(text);
-            if (parsed?.error || parsed?.details) {
-              const details = Array.isArray(parsed.details) ? parsed.details.join('; ') : '';
-              serverMessage = `${parsed.error || ''}${details ? `: ${details}` : ''}`;
+            const text = await response.text();
+            serverMessage = text;
+            try {
+              const parsed = JSON.parse(text);
+              if (parsed?.error || parsed?.details) {
+                const details = Array.isArray(parsed.details) ? parsed.details.join('; ') : '';
+                serverMessage = `${parsed.error || ''}${details ? `: ${details}` : ''}`;
+              }
+            } catch {
+              // keep raw text
             }
           } catch {
-            // keep raw text
+            // ignore
           }
-        } catch {
-          // ignore
+          if (response.status === 400) {
+            return { success: false, error: serverMessage || '更新失败：请求格式或参数错误（400）。' };
+          }
+          throw new Error(`更新失败: ${response.status}${serverMessage ? ` - ${serverMessage}` : ''}`);
         }
-        if (response.status === 400) {
-          return { success: false, error: serverMessage || '更新失败：请求格式或参数错误（400）。' };
-        }
-        throw new Error(`更新失败: ${response.status}${serverMessage ? ` - ${serverMessage}` : ''}`);
-      }
 
-      return { success: true, expiresAt: newExpiresAt };
-    } catch (fetchError) {
-      clearTimeout(timeoutId);
-      if ((fetchError as Error).name === 'AbortError') {
-        return { success: false, error: '更新超时，请检查网络后重试。' };
+        return { success: true, expiresAt: newExpiresAt };
+      } catch (fetchError) {
+        clearTimeout(timeoutId);
+        lastError = fetchError as Error;
+        
+        if (lastError.name === 'AbortError') {
+          return { success: false, error: '更新超时，请检查网络后重试。如果数据较大，可能需要更长时间。' };
+        }
+        
+        // 如果是网络错误且还有重试次数，等待后重试
+        if (attempt < maxRetries && (lastError.message === 'Failed to fetch' || lastError.message.includes('NetworkError'))) {
+          console.log(`Update attempt ${attempt + 1} failed, retrying in 2 seconds...`);
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          continue;
+        }
+        
+        throw lastError;
       }
-      throw fetchError;
     }
+    
+    // 所有重试都失败
+    throw lastError || new Error('更新失败');
   } catch (error) {
     console.error('Update error:', error);
     // 提供更友好的错误提示
