@@ -586,7 +586,8 @@ export const fileToBase64 = async (file: File, skipValidation = false): Promise<
   });
 
   // 对超大分辨率图片进行压缩/降采样，降低 GPU 纹理压力，避免 WebGL 闪烁/上下文丢失
-  const MAX_DIMENSION = 2048; // 单边最大像素
+  // 同时减少上传体积，提升国内网络上传速度
+  const MAX_DIMENSION = 1600; // 单边最大像素（从 2048 降到 1600）
   const type = file.type;
 
   // GIF/SVG 保持原始（避免破坏动图或矢量）
@@ -603,12 +604,17 @@ export const fileToBase64 = async (file: File, skipValidation = false): Promise<
   });
 
   const { width, height } = img;
-  if (width <= MAX_DIMENSION && height <= MAX_DIMENSION) {
-    return dataUrl; // 尺寸在范围内，直接返回
+  
+  // 计算文件大小（base64 约为原始大小的 1.37 倍）
+  const estimatedSizeKB = dataUrl.length / 1024;
+  const needsCompression = width > MAX_DIMENSION || height > MAX_DIMENSION || estimatedSizeKB > 500;
+  
+  if (!needsCompression) {
+    return dataUrl; // 尺寸和大小都在范围内，直接返回
   }
 
   // 计算等比缩放
-  const scale = Math.min(MAX_DIMENSION / width, MAX_DIMENSION / height);
+  const scale = Math.min(MAX_DIMENSION / width, MAX_DIMENSION / height, 1);
   const targetW = Math.round(width * scale);
   const targetH = Math.round(height * scale);
 
@@ -620,12 +626,10 @@ export const fileToBase64 = async (file: File, skipValidation = false): Promise<
 
   ctx.drawImage(img, 0, 0, targetW, targetH);
 
-  // JPEG/WebP 使用质量参数压缩，PNG/BMP 仍用原格式
-  const isJpegLike = type === 'image/jpeg' || type === 'image/webp';
-  const mime = isJpegLike ? type : 'image/png';
-  const quality = isJpegLike ? 0.9 : undefined;
+  // 统一转为 JPEG 压缩（体积更小），质量降到 0.8
+  const quality = 0.8;
 
-  return canvas.toDataURL(mime, quality);
+  return canvas.toDataURL('image/jpeg', quality);
 };
 
 // 检测是否支持全屏
