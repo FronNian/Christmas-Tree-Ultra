@@ -1258,24 +1258,34 @@ export default function GrandTreeApp() {
       return;
     }
     
-    // 检查是否已有分享
-    const localShare = getLocalShare();
-    if (localShare) {
-      // 获取现有分享的密码状态
-      const shareData = await getShare(localShare.shareId);
-      if (shareData) {
-        setExistingShareHasPassword(!!(shareData.passwordHash && shareData.passwordSalt));
+    // 显示加载状态
+    setIsSharing(true);
+    
+    try {
+      // 检查是否已有分享
+      const localShare = getLocalShare();
+      if (localShare) {
+        // 获取现有分享的密码状态
+        const shareData = await getShare(localShare.shareId);
+        if (shareData) {
+          setExistingShareHasPassword(!!(shareData.passwordHash && shareData.passwordSalt));
+        } else {
+          // 分享已过期，清除本地记录
+          clearLocalShare();
+          setExistingShareHasPassword(false);
+        }
       } else {
-        // 分享已过期，清除本地记录
-        clearLocalShare();
         setExistingShareHasPassword(false);
       }
-    } else {
-      setExistingShareHasPassword(false);
+      
+      // 显示密码设置弹窗
+      setShowPasswordSetup(true);
+    } catch (error) {
+      console.error('检查分享状态失败:', error);
+      showModal('error', '网络错误', '无法连接服务器，请检查网络后重试');
+    } finally {
+      setIsSharing(false);
     }
-    
-    // 显示密码设置弹窗
-    setShowPasswordSetup(true);
   }, [uploadedPhotos.length, showModal]);
 
   // 执行实际的分享操作

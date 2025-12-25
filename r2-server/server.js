@@ -167,8 +167,8 @@ const uploadLimitMap = new Map();
 // 动态限流：可通过环境变量调整
 const RATE_LIMIT = {
   windowMs: 60 * 1000,
-  maxRequests: parseInt(process.env.RATE_LIMIT_MAX || '100', 10),  // 提高到 100/分钟
-  maxUploads: parseInt(process.env.UPLOAD_LIMIT_MAX || '10', 10)   // 提高到 10/分钟
+  maxRequests: parseInt(process.env.RATE_LIMIT_MAX || '200', 10),  // 提高到 200/分钟
+  maxUploads: parseInt(process.env.UPLOAD_LIMIT_MAX || '50', 10)   // 提高到 50/分钟（支持批量图片上传）
 };
 
 function checkRateLimit(req, res, next) {

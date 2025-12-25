@@ -197,7 +197,8 @@ export default {
           }
         });
 
-        const publicUrl = `https://${url.host}/${key}`;
+        const publicHost = env.R2_PUBLIC_HOST;
+        const publicUrl = `https://${publicHost}/${key}`;
 
         return jsonResponse({
           success: true,

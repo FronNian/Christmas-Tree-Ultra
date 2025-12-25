@@ -1166,8 +1166,14 @@ export const refreshShareExpiry = async (
   editToken: string
 ): Promise<{ success: boolean; newExpiresAt?: number; error?: string }> => {
   try {
+    // 使用 API 服务器读取和写入（避免 CORS 问题）
+    const apiUrl = await getR2ApiUrl();
+    if (!apiUrl) {
+      return { success: false, error: '服务未配置' };
+    }
+
     // 直接获取数据，不检查过期状态（允许续期已过期的分享）
-    const url = `${R2_PUBLIC_URL}/shares/${shareId}.json?ts=${Date.now()}`;
+    const url = `${apiUrl}/shares/${shareId}.json?ts=${Date.now()}`;
     const getResponse = await fetch(url, { cache: 'no-store' });
 
     if (!getResponse.ok) {
@@ -1199,7 +1205,6 @@ export const refreshShareExpiry = async (
       refreshCount: refreshCount + 1
     };
 
-    const apiUrl = await getR2ApiUrl();
     const putResponse = await fetch(`${apiUrl}/shares/${shareId}.json`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
@@ -1228,8 +1233,14 @@ export const deleteShare = async (
   editToken: string
 ): Promise<{ success: boolean; error?: string }> => {
   try {
+    // 使用 API 服务器读取和写入（避免 CORS 问题）
+    const apiUrl = await getR2ApiUrl();
+    if (!apiUrl) {
+      return { success: false, error: '服务未配置' };
+    }
+
     // 直接获取数据，不检查过期状态（允许删除已过期的分享）
-    const url = `${R2_PUBLIC_URL}/shares/${shareId}.json?ts=${Date.now()}`;
+    const url = `${apiUrl}/shares/${shareId}.json?ts=${Date.now()}`;
     const response = await fetch(url, { cache: 'no-store' });
 
     if (!response.ok) {
@@ -1247,7 +1258,6 @@ export const deleteShare = async (
       return { success: false, error: '无权删除此分享' };
     }
 
-    const apiUrl = await getR2ApiUrl();
     const deleteResponse = await fetch(`${apiUrl}/shares/${shareId}.json?token=${encodeURIComponent(editToken)}`, {
       method: 'DELETE'
     });
@@ -1441,4 +1451,137 @@ export const getShareMetaWithError = async (shareId: string): Promise<GetShareMe
     console.error('Get share meta error:', error);
     return { data: null, error: 'network' };
   }
+};
+
+/**
+ * 检查分享是否需要迁移（包含 base64 图片）
+ */
+export const checkNeedsMigration = (photos: string[]): boolean => {
+  return photos.some(photo => photo.startsWith('data:image/'));
+};
+
+/**
+ * 获取需要迁移的图片数量
+ */
+export const getBase64PhotoCount = (photos: string[]): number => {
+  return photos.filter(photo => photo.startsWith('data:image/')).length;
+};
+
+/**
+ * 迁移分享数据：将 base64 图片转换为 URL
+ * @param shareId 分享 ID
+ * @param editToken 编辑令牌
+ * @param onProgress 进度回调 (current, total, status)
+ * @returns 迁移结果
+ */
+export const migrateSharePhotos = async (
+  shareId: string,
+  editToken: string,
+  onProgress?: (current: number, total: number, status: string) => void
+): Promise<{ success: boolean; migratedCount?: number; error?: string }> => {
+  try {
+    const apiUrl = await getR2ApiUrl();
+    if (!apiUrl) {
+      return { success: false, error: '服务未配置' };
+    }
+
+    onProgress?.(0, 100, '正在获取分享数据...');
+
+    // 获取现有数据
+    const url = `${apiUrl}/shares/${shareId}.json?ts=${Date.now()}`;
+    const response = await fetch(url, { cache: 'no-store' });
+
+    if (!response.ok) {
+      return { success: false, error: '获取分享失败' };
+    }
+
+    const existing: ShareData = await response.json();
+
+    if (existing.editToken !== editToken) {
+      return { success: false, error: '无权操作此分享' };
+    }
+
+    // 检查是否有需要迁移的图片
+    const base64Photos = existing.photos.filter(p => p.startsWith('data:image/'));
+    if (base64Photos.length === 0) {
+      return { success: true, migratedCount: 0 };
+    }
+
+    onProgress?.(0, base64Photos.length, `正在迁移 ${base64Photos.length} 张图片...`);
+
+    // 上传 base64 图片，获取 URL
+    const newPhotos: string[] = [];
+    let migratedCount = 0;
+
+    for (let i = 0; i < existing.photos.length; i++) {
+      const photo = existing.photos[i];
+      
+      if (isImageUrl(photo)) {
+        // 已经是 URL，保持不变
+        newPhotos.push(photo);
+      } else {
+        // base64 图片，上传并获取 URL
+        const imageUrl = await uploadSingleImage(photo, shareId, editToken, apiUrl);
+        
+        if (imageUrl) {
+          newPhotos.push(imageUrl);
+          migratedCount++;
+          onProgress?.(migratedCount, base64Photos.length, `已迁移 ${migratedCount}/${base64Photos.length} 张图片`);
+        } else {
+          // 上传失败，保持 base64
+          newPhotos.push(photo);
+          console.warn(`[Migration] 图片 ${i + 1} 迁移失败，保持 base64`);
+        }
+      }
+    }
+
+    if (migratedCount === 0) {
+      return { success: false, error: '所有图片迁移失败' };
+    }
+
+    onProgress?.(migratedCount, base64Photos.length, '正在保存...');
+
+    // 更新分享数据
+    const updatedData: ShareData = {
+      ...existing,
+      photos: newPhotos,
+      updatedAt: Date.now()
+    };
+
+    const putResponse = await fetch(`${apiUrl}/shares/${shareId}.json`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updatedData)
+    });
+
+    if (!putResponse.ok) {
+      return { success: false, error: `保存失败: ${putResponse.status}` };
+    }
+
+    onProgress?.(migratedCount, base64Photos.length, '迁移完成！');
+
+    return { success: true, migratedCount };
+  } catch (error) {
+    console.error('Migration error:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : '迁移失败'
+    };
+  }
+};
+
+/**
+ * 估算分享数据大小（MB）
+ */
+export const estimateShareSize = (photos: string[]): number => {
+  let totalSize = 0;
+  for (const photo of photos) {
+    if (photo.startsWith('data:image/')) {
+      totalSize += estimateBase64SizeMB(photo);
+    } else {
+      // URL 大约 100 字节
+      totalSize += 0.0001;
+    }
+  }
+  return totalSize;
 };
