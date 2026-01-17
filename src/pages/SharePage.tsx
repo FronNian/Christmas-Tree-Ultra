@@ -13,7 +13,7 @@ import type { ShareData, ShareMeta, ShareErrorType } from '../lib/r2';
 import type { SceneState, SceneConfig, PhotoScreenPosition } from '../types';
 import { PRESET_MUSIC } from '../types';
 import { useTimeline } from '../hooks/useTimeline';
-import { Volume2, VolumeX, TreePine, Sparkles, Loader, Frown, HelpCircle, Play, Maximize, Minimize, RotateCcw, Camera, CameraOff } from 'lucide-react';
+import { Volume2, VolumeX, TreePine, Sparkles, Loader, Frown, HelpCircle, Play, Maximize, Minimize, RotateCcw, Camera, CameraOff, Wrench } from 'lucide-react';
 
 // 深度合并配置对象
 function deepMergeConfig<T extends Record<string, unknown>>(target: T, source: Partial<T>): T {
@@ -86,6 +86,7 @@ export default function SharePage({ shareId }: SharePageProps) {
   // 使用 ref 存储手掌移动值，避免频繁状态更新导致卡顿
   const palmMoveRef = useRef<{ x: number; y: number } | null>(null);
   const [aiStatus, setAiStatus] = useState("INITIALIZING...");
+  const [debugMode, setDebugMode] = useState(false);
   const [musicPlaying, setMusicPlaying] = useState(true);
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState<number | null>(null);
   const [photoLocked, setPhotoLocked] = useState(false); // 照片选中后的锁定期
@@ -1549,7 +1550,7 @@ export default function SharePage({ shareId }: SharePageProps) {
         onGesture={handleGestureChange}
         onMove={handleRotationSpeedChange}
         onStatus={setAiStatus}
-        debugMode={false}
+        debugMode={debugMode}
         enabled={aiEnabled && !showTutorial}
         isPhotoSelected={selectedPhotoIndex !== null}
         photoLocked={photoLocked}
@@ -1589,6 +1590,10 @@ export default function SharePage({ shareId }: SharePageProps) {
 
         <button onClick={() => setShowTutorial(true)} style={buttonStyle(false, mobile)} title="使用帮助">
           <HelpCircle size={18} />
+        </button>
+
+        <button onClick={() => setDebugMode(!debugMode)} style={buttonStyle(debugMode, mobile)} title="调试模式（显示摄像头）">
+          <Wrench size={18} />
         </button>
 
         <button onClick={() => setAiEnabled(prev => !prev)} style={buttonStyle(aiEnabled, mobile)} title={aiEnabled ? '关闭摄像头' : '开启摄像头'}>
